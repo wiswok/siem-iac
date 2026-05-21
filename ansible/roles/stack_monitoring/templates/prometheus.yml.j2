@@ -1,0 +1,135 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: "node_exporter"
+    static_configs:
+      - targets:
+          - "10.10.30.5:9100"
+          - "10.10.30.10:9100"
+          - "10.10.30.20:9100"
+          - "10.10.30.30:9100"
+          - "10.10.10.40:9100"
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: "10.10.30.5:.*"
+        target_label: node
+        replacement: edge-core
+      - source_labels: [__address__]
+        regex: "10.10.30.10:.*"
+        target_label: node
+        replacement: sec-core
+      - source_labels: [__address__]
+        regex: "10.10.30.20:.*"
+        target_label: node
+        replacement: obs-core
+      - source_labels: [__address__]
+        regex: "10.10.30.30:.*"
+        target_label: node
+        replacement: ids-core
+      - source_labels: [__address__]
+        regex: "10.10.10.40:.*"
+        target_label: node
+        replacement: gitlab-core
+
+
+  - job_name: "blackbox_http"
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - http://10.10.30.10:9200
+        labels:
+          service: elasticsearch
+      - targets:
+          - http://10.10.30.10:5601/api/status
+        labels:
+          service: kibana
+      - targets:
+          - http://10.10.30.20:3000/api/health
+        labels:
+          service: grafana
+      - targets:
+          - http://10.10.30.20:9090/-/ready
+        labels:
+          service: prometheus
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115
+
+  - job_name: "blackbox_https_insecure"
+    metrics_path: /probe
+    params:
+      module: [http_2xx_insecure]
+    static_configs:
+      - targets:
+          - https://10.10.30.5:9000/health
+        labels:
+          service: step-ca-api
+          monitor_cert: "false"
+      - targets:
+          - https://kibana.lab.wiswok.net
+        labels:
+          service: kibana-public
+          monitor_cert: "true"
+      - targets:
+          - https://grafana.lab.wiswok.net
+        labels:
+          service: grafana-public
+          monitor_cert: "true"
+      - targets:
+          - https://prometheus.lab.wiswok.net
+        labels:
+          service: prometheus-public
+          monitor_cert: "true"
+      - targets:
+          - https://ca.lab.wiswok.net/health
+        labels:
+          service: ca-public
+          monitor_cert: "true"
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115
+
+  - job_name: "blackbox_tcp"
+    metrics_path: /probe
+    params:
+      module: [tcp_connect]
+    static_configs:
+      - targets:
+          - 10.10.30.10:1514
+        labels:
+          service: wazuh-manager-agents
+      - targets:
+          - 10.10.30.10:55000
+        labels:
+          service: wazuh-manager-api
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115

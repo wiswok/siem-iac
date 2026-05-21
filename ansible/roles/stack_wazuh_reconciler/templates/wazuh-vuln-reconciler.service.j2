@@ -1,0 +1,22 @@
+[Unit]
+Description=Wazuh vulnerability inventory reconciler
+After=network.target
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=/etc/default/wazuh-reconciler
+ExecStart=/usr/bin/python3 {{ reconciler_root }}/reconcile_vulns.py
+StandardOutput=journal
+StandardError=journal
+
+# Hardening — reducir superficie de ataque del script
+ProtectSystem=strict
+ReadWritePaths={{ reconciler_root }}
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+

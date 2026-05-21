@@ -1,0 +1,40 @@
+name: "Wazuh - Integridad de ficheros (FIM)"
+type: any
+index: wazuh-alerts-*
+
+filter:
+  - query:
+      query_string:
+        query: "rule.groups: syscheck AND rule.level: >=7"
+
+query_key:
+  - agent.name
+  - syscheck.path
+
+realert:
+  hours: 4
+
+alert_missing_value: "?"
+
+alert: telegram
+telegram_bot_token: "{{ telegram_bot_token }}"
+telegram_room_id: "{{ telegram_chat_id }}"
+telegram_parse_mode: html
+
+alert_text_type: alert_text_only
+alert_text: |
+  🟠 <b>[SIEM] Cambio detectado en archivo crítico — Wazuh FIM</b>
+  📌 <b>Resumen:</b> Modificación/creación/borrado detectado en un archivo monitorizado
+  📍 <b>Agente:</b> {0}
+  📁 <b>Ruta:</b> {1}
+  🔧 <b>Evento:</b> {2}
+  📋 <b>Regla:</b> {3} — {4}
+  ⚠️ <b>Nivel:</b> {5}
+  🔍 <a href="{{ kibana_public_url }}/app/discover#/?_g=(time:(from:now-1h,to:now))&_a=(query:(language:kuery,query:'rule.groups:syscheck and agent.name:%22{0}%22'))">Ver en Kibana</a>
+alert_text_args:
+  - agent.name
+  - syscheck.path
+  - syscheck.event
+  - rule.id
+  - rule.description
+  - rule.level

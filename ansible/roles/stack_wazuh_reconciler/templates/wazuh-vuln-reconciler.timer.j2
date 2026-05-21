@@ -1,0 +1,13 @@
+[Unit]
+Description=Run Wazuh vulnerability reconciler every {{ reconciler_interval }}
+Requires=wazuh-vuln-reconciler.service
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec={{ reconciler_interval }}
+Unit=wazuh-vuln-reconciler.service
+AccuracySec=30s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

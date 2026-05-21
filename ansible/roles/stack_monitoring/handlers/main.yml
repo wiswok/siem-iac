@@ -1,0 +1,10 @@
+---
+- name: Reiniciar Prometheus
+  community.docker.docker_container:
+    name: "{{ prometheus_container_name }}"
+    restart: true
+
+- name: Reiniciar Alertmanager
+  community.docker.docker_container:
+    name: "{{ alertmanager_container_name }}"
+    restart: true

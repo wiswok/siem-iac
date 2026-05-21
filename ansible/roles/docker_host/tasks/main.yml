@@ -1,0 +1,3 @@
+---
+- name: Ejecutar instalación de Docker
+  ansible.builtin.import_tasks: deploy.yml

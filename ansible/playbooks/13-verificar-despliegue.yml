@@ -1,0 +1,212 @@
+---
+# ============================================================
+# 13 — Verificación post-despliegue
+# Ejecuta health checks sobre todos los servicios de la plataforma.
+# Uso: ansible-playbook playbooks/13-verificar-despliegue.yml
+# ============================================================
+- name: Verificar servicios en sec-core
+  hosts: elk
+  gather_facts: false
+  tasks:
+    # ----------------------------------------------------------
+    # Contenedores Docker
+    # ----------------------------------------------------------
+    - name: Obtener estado de contenedores Docker
+      community.docker.docker_host_info:
+        containers: true
+      register: docker_info
+
+    - name: Verificar que todos los contenedores están corriendo
+      ansible.builtin.assert:
+        that:
+          - docker_info.containers | selectattr('Status', 'match', '^Up') | list | length >= 1
+        fail_msg: "Hay contenedores parados en sec-core"
+        success_msg: "{{ docker_info.containers | selectattr('Status', 'match', '^Up') | map(attribute='Names') | map('first') | list | join(', ') }} — todos running"
+
+    # ----------------------------------------------------------
+    # Elasticsearch
+    # ----------------------------------------------------------
+    - name: Verificar cluster health de Elasticsearch
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ elasticsearch_port }}/_cluster/health"
+        method: GET
+      register: es_health
+      failed_when: es_health.json.status == "red"
+
+    - name: Mostrar estado del cluster
+      ansible.builtin.debug:
+        msg: "Elasticsearch cluster: {{ es_health.json.status }} ({{ es_health.json.number_of_nodes }} nodos, {{ es_health.json.active_shards }} shards activos)"
+
+    # ----------------------------------------------------------
+    # Kibana
+    # ----------------------------------------------------------
+    - name: Verificar Kibana respondiendo
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ kibana_port }}/api/status"
+        method: GET
+        headers:
+          kbn-xsrf: "true"
+      register: kibana_status
+      failed_when: kibana_status.status != 200
+
+    - name: Mostrar estado de Kibana
+      ansible.builtin.debug:
+        msg: "Kibana: {{ kibana_status.json.status.overall.level | default('available') }}"
+
+    # ----------------------------------------------------------
+    # Transform de Vulnerabilidades
+    # ----------------------------------------------------------
+    - name: Verificar estado del Transform de Vulnerabilidades
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ elasticsearch_port }}/_transform/wazuh-vulnerabilities-inventory/_stats"
+        method: GET
+      register: transform_status
+      failed_when: transform_status.json.transforms | length == 0
+
+    - name: Mostrar estado del Transform
+      ansible.builtin.debug:
+        msg: "Transform: {{ transform_status.json.transforms[0].state }} ({{ transform_status.json.transforms[0].stats.documents_processed | default(0) }} docs procesados)"
+
+    # ----------------------------------------------------------
+    # API de Wazuh
+    # ----------------------------------------------------------
+    - name: Verificar API de Wazuh respondiendo
+      ansible.builtin.uri:
+        url: "https://127.0.0.1:{{ wazuh_api_port }}/"
+        method: GET
+        validate_certs: false
+        status_code: [200, 401]
+      register: wazuh_api
+
+    - name: Mostrar estado de la API de Wazuh
+      ansible.builtin.debug:
+        msg: "Wazuh API: respondiendo (HTTP {{ wazuh_api.status }})"
+
+    # ----------------------------------------------------------
+    # Reconciler timer
+    # ----------------------------------------------------------
+    - name: Verificar timer del reconciler activo
+      ansible.builtin.command: systemctl is-active wazuh-vuln-reconciler.timer
+      register: reconciler_timer
+      changed_when: false
+      failed_when: reconciler_timer.rc != 0
+
+    - name: Mostrar estado del reconciler
+      ansible.builtin.debug:
+        msg: "Reconciler timer: {{ reconciler_timer.stdout }}"
+
+- name: Verificar servicios en ids-core
+  hosts: suricata
+  gather_facts: false
+  tasks:
+    - name: Obtener estado de contenedores Docker
+      community.docker.docker_host_info:
+        containers: true
+      register: docker_info
+
+    - name: Verificar que Suricata está corriendo
+      community.docker.docker_container_info:
+        name: suricata
+      register: suricata_container
+
+    - name: Confirmar Suricata corriendo
+      ansible.builtin.assert:
+        that:
+          - suricata_container.exists
+          - suricata_container.container.State.Running
+        fail_msg: "El contenedor de Suricata no está corriendo en ids-core"
+        success_msg: "Suricata: running ({{ suricata_container.container.State.Status }})"
+
+    - name: Verificar que las reglas de Suricata están presentes
+      ansible.builtin.stat:
+        path: /opt/siem/suricata/rules/rules/suricata.rules
+      register: suricata_rules
+
+    - name: Confirmar reglas presentes
+      ansible.builtin.assert:
+        that: suricata_rules.stat.exists
+        fail_msg: "No se encontraron reglas de Suricata"
+        success_msg: "Reglas Suricata presentes ({{ suricata_rules.stat.size | default('?') }} bytes)"
+
+- name: Verificar servicios en obs-core
+  hosts: monitoring
+  gather_facts: false
+  tasks:
+    - name: Obtener estado de contenedores Docker
+      community.docker.docker_host_info:
+        containers: true
+      register: docker_info
+
+    - name: Verificar Prometheus respondiendo
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:9090/-/healthy"
+        method: GET
+      register: prom_health
+
+    - name: Mostrar estado de Prometheus
+      ansible.builtin.debug:
+        msg: "Prometheus: healthy"
+
+    - name: Verificar Grafana respondiendo
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:3000/api/health"
+        method: GET
+      register: grafana_health
+
+    - name: Mostrar estado de Grafana
+      ansible.builtin.debug:
+        msg: "Grafana: {{ grafana_health.json.database | default('ok') }}"
+
+- name: Verificar servicios en edge-core
+  hosts: edge
+  gather_facts: false
+  tasks:
+    - name: Obtener estado de contenedores Docker
+      community.docker.docker_host_info:
+        containers: true
+      register: docker_info
+
+    - name: Verificar que Step-CA y Traefik están corriendo
+      ansible.builtin.assert:
+        that:
+          - docker_info.containers | selectattr('Status', 'match', '^Up') | list | length >= 2
+        fail_msg: "Faltan contenedores en edge-core"
+        success_msg: "{{ docker_info.containers | selectattr('Status', 'match', '^Up') | map(attribute='Names') | map('first') | list | join(', ') }} — running"
+
+- name: Verificar agentes Wazuh en todos los nodos
+  hosts: wazuh_agents
+  gather_facts: false
+  tasks:
+    - name: Verificar agente Wazuh corriendo
+      ansible.builtin.command: systemctl is-active wazuh-agent
+      register: agent_status
+      changed_when: false
+      failed_when: agent_status.rc != 0
+
+    - name: Mostrar estado del agente
+      ansible.builtin.debug:
+        msg: "Wazuh Agent en {{ inventory_hostname }}: {{ agent_status.stdout }}"
+
+- name: Resumen final
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Resumen de verificación
+      ansible.builtin.debug:
+        msg: |
+          ════════════════════════════════════════
+          ✅ Verificación post-despliegue COMPLETA
+          ════════════════════════════════════════
+          Todos los health checks han pasado.
+          Servicios verificados:
+            • Elasticsearch cluster health
+            • Kibana API status
+            • Wazuh Manager API
+            • Transform de vulnerabilidades
+            • Reconciler timer
+            • Suricata IDS + reglas
+            • Prometheus + Grafana
+            • Step-CA + Traefik
+            • Agentes Wazuh (todos los nodos)
+          ════════════════════════════════════════

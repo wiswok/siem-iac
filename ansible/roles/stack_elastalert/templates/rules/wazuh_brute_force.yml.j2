@@ -1,0 +1,34 @@
+name: "Wazuh - Brute Force detectado"
+type: any
+index: wazuh-alerts-*
+
+filter:
+  - query:
+      query_string:
+        query: "rule.id: 5712 OR rule.id: 5758 OR rule.id: 5763"
+
+query_key:
+  - agent.name
+  - data.srcip
+
+realert:
+  hours: 1
+
+alert_missing_value: "?"
+
+alert: telegram
+telegram_bot_token: "{{ telegram_bot_token }}"
+telegram_room_id: "{{ telegram_chat_id }}"
+telegram_parse_mode: html
+
+alert_text_type: alert_text_only
+alert_text: |
+  🔴 <b>[SIEM] Posible Brute Force — Wazuh</b>
+  📌 <b>Resumen:</b> {2}
+  📍 <b>Agente:</b> {0}
+  🌐 <b>IP origen:</b> {1}
+  🔍 <a href="{{ kibana_public_url }}/app/discover#/?_g=(time:(from:now-1h,to:now))&_a=(query:(language:kuery,query:'agent.name:%22{0}%22 and data.srcip:%22{1}%22'))">Ver en Kibana</a>
+alert_text_args:
+  - agent.name
+  - data.srcip
+  - rule.description

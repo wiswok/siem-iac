@@ -1,0 +1,13 @@
+filebeat.inputs:
+  - type: filestream
+    id: suricata-eve
+    enabled: true
+    paths:
+      - /var/log/suricata/eve.json
+    parsers:
+      - ndjson:
+          overwrite_keys: true
+          add_error_key: true
+
+output.logstash:
+  hosts: ["{{ logstash_host }}"]

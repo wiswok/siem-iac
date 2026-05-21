@@ -1,0 +1,188 @@
+---
+stages:
+  - validate
+  - lint
+  - deploy
+
+variables:
+  ANSIBLE_HOST_KEY_CHECKING: "false"
+  TF_IN_AUTOMATION: "true"
+  ANSIBLE_CONFIG: "${CI_PROJECT_DIR}/ansible/ansible.cfg"
+
+# ============================================================
+# Plantilla reutilizable para todos los deploy
+# ============================================================
+.deploy_template:
+  stage: deploy
+  image: cytopia/ansible:2.16-tools@sha256:fba16e769a7829e9da598d8986a8fecbaa04d49e47f8c71b5a20871be1ae3dd7
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+  environment:
+    name: lab
+  before_script:
+    - eval $(ssh-agent -s)
+    - echo "$SSH_PRIVATE_KEY" | ssh-add -
+    - echo "$VAULT_PASS" > .vault_pass && chmod 600 .vault_pass
+    - cd ansible
+
+# ============================================================
+# VALIDATE — Terraform y Ansible syntax check
+# ============================================================
+terraform:validate:
+  stage: validate
+  image: hashicorp/terraform:1.9
+  script:
+    - cd terraform
+    - terraform init -backend=false
+    - terraform validate
+  rules:
+    - changes:
+        - terraform/**/*
+
+ansible:syntax:
+  stage: validate
+  image: cytopia/ansible:2.16-tools@sha256:fba16e769a7829e9da598d8986a8fecbaa04d49e47f8c71b5a20871be1ae3dd7
+  script:
+    - echo "$VAULT_PASS" > .vault_pass && chmod 600 .vault_pass
+    - cd ansible
+    - ansible-playbook --syntax-check playbooks/*.yml
+  rules:
+    - changes:
+        - ansible/**/*
+
+# ============================================================
+# LINT
+# ============================================================
+ansible:lint:
+  stage: lint
+  image: cytopia/ansible:2.16-tools@sha256:fba16e769a7829e9da598d8986a8fecbaa04d49e47f8c71b5a20871be1ae3dd7
+  script:
+    - pip install ansible-lint
+    - cd ansible
+    - ansible-lint .
+  rules:
+    - changes:
+        - ansible/**/*
+  allow_failure: true
+
+# ============================================================
+# DEPLOY — manual, solo sobre rama main
+# Los playbooks se ejecutan en orden de dependencia.
+# Se puede lanzar cada uno individualmente o usar deploy:full.
+# ============================================================
+deploy:01-base:
+  extends: .deploy_template
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+  script:
+    - ansible-playbook playbooks/01-configuracion-base.yml
+
+deploy:02-step-ca:
+  extends: .deploy_template
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+  script:
+    - ansible-playbook playbooks/02-desplegar-step-ca.yml
+
+deploy:03-traefik:
+  extends: .deploy_template
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+  script:
+    - ansible-playbook playbooks/03-desplegar-traefik-interno.yml
+
+deploy:04-wazuh:
+  extends: .deploy_template
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+  script:
+    - ansible-playbook playbooks/04-desplegar-wazuh.yml
+
+deploy:05-elk:
+  extends: .deploy_template
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+  script:
+    - ansible-playbook playbooks/05-desplegar-elk.yml
+
+deploy:06-filebeat-wazuh:
+  extends: .deploy_template
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+  script:
+    - ansible-playbook playbooks/06-desplegar-filebeat-wazuh.yml
+
+deploy:07-suricata:
+  extends: .deploy_template
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+  script:
+    - ansible-playbook playbooks/07-desplegar-suricata.yml
+
+deploy:08-filebeat-suricata:
+  extends: .deploy_template
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+  script:
+    - ansible-playbook playbooks/08-desplegar-filebeat-suricata.yml
+
+deploy:09-wazuh-agent:
+  extends: .deploy_template
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+  script:
+    - ansible-playbook playbooks/09-desplegar-wazuh-agent.yml
+
+deploy:10-monitoring:
+  extends: .deploy_template
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+  script:
+    - ansible-playbook playbooks/10-desplegar-monitoring.yml
+
+deploy:11-node-exporter:
+  extends: .deploy_template
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+  script:
+    - ansible-playbook playbooks/11-desplegar-node-exporter.yml
+
+deploy:12-elastalert:
+  extends: .deploy_template
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+  script:
+    - ansible-playbook playbooks/12-desplegar-elastalert.yml
+
+deploy:13-verify:
+  extends: .deploy_template
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+  script:
+    - ansible-playbook playbooks/13-verificar-despliegue.yml
+
+deploy:full:
+  extends: .deploy_template
+  script:
+    - |
+      for pb in playbooks/0*.yml playbooks/1[0-2]*.yml; do
+        echo "========== $(basename $pb) =========="
+        ansible-playbook "$pb" || exit 1
+      done
+    - echo "========== Verificación post-despliegue =========="
+    - ansible-playbook playbooks/13-verificar-despliegue.yml
+
+

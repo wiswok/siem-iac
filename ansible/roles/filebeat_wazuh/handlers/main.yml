@@ -1,0 +1,6 @@
+---
+- name: Reiniciar filebeat-wazuh
+  community.docker.docker_container:
+    name: filebeat-wazuh
+    state: started
+    restart: true

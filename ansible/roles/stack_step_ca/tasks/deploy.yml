@@ -1,0 +1,80 @@
+---
+- name: Crear directorio raíz de step-ca
+  ansible.builtin.file:
+    path: "{{ step_ca_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Crear subdirectorios de step-ca
+  ansible.builtin.file:
+    path: "{{ step_ca_dir }}/{{ item.path }}"
+    state: directory
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "certs",   mode: "0755" }
+    - { path: "config",  mode: "0755" }
+    - { path: "db",      mode: "0755" }
+    - { path: "secrets", mode: "0700" }
+
+- name: Guardar password de la CA
+  ansible.builtin.copy:
+    dest: "{{ step_ca_dir }}/secrets/password"
+    content: "{{ step_ca_password }}\n"
+    mode: "0600"
+
+- name: Copiar docker-compose de step-ca
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ step_ca_dir }}/docker-compose.yml"
+    mode: "0644"
+
+- name: Levantar step-ca
+  community.docker.docker_compose_v2:
+    project_src: "{{ step_ca_dir }}"
+    state: present
+
+- name: Esperar a que step-ca abra el puerto 9000
+  ansible.builtin.wait_for:
+    host: "127.0.0.1"
+    port: 9000
+    timeout: 60
+
+- name: Esperar a que step-ca complete la inicialización (root_ca.crt + /health)
+  ansible.builtin.shell: |
+    docker exec {{ step_ca_container_name }} sh -c \
+      '[ -s /home/step/certs/root_ca.crt ] && \
+       wget -q -O- --no-check-certificate https://127.0.0.1:9000/health | grep -q ok'
+  register: _step_ca_ready
+  retries: 30
+  delay: 2
+  until: _step_ca_ready.rc == 0
+  changed_when: false
+
+- name: Obtener fingerprint de la root CA generada por step-ca
+  ansible.builtin.command:
+    cmd: docker exec {{ step_ca_container_name }} step certificate fingerprint /home/step/certs/root_ca.crt
+  register: _step_ca_fingerprint_cmd
+  changed_when: false
+
+- name: Exportar fingerprint como fact reutilizable por step_cli
+  ansible.builtin.set_fact:
+    step_ca_fingerprint_runtime: "{{ _step_ca_fingerprint_cmd.stdout | trim }}"
+
+- name: Bootstrap step-cli dentro del contenedor (idempotente)
+  ansible.builtin.shell: |
+    docker exec {{ step_ca_container_name }} sh -c 'test -f /home/step/config/defaults.json || \
+      step ca bootstrap --ca-url https://ca.lab.wiswok.net:9000 \
+        --fingerprint {{ step_ca_fingerprint_runtime }} --force'
+  changed_when: false
+
+- name: Configurar duración de certificados del provisioner ACME
+  ansible.builtin.shell: |
+    docker exec step-ca step ca provisioner update acme \
+      --x509-default-dur {{ step_ca_acme_cert_duration | default('168h') }} \
+      --x509-max-dur {{ step_ca_acme_cert_duration | default('168h') }} \
+      --admin-subject step \
+      --admin-provisioner admin \
+      --admin-password-file /home/step/secrets/password
+  register: _acme_update
+  changed_when: false
+  failed_when: _acme_update.rc != 0 and 'No admin credentials found' not in _acme_update.stderr

@@ -1,0 +1,37 @@
+input {
+  beats {
+    port => 5044
+  }
+
+  tcp {
+    port => 5000
+    codec => json_lines
+  }
+}
+
+filter {
+  if [event_type] {
+    mutate {
+      add_field => { "[@metadata][target_index]" => "suricata-%{+YYYY.MM.dd}" }
+    }
+  } else if [rule][id] and [manager][name] {
+    mutate {
+      add_field => { "[@metadata][target_index]" => "wazuh-alerts-%{+YYYY.MM.dd}" }
+    }
+  } else {
+    mutate {
+      add_field => { "[@metadata][target_index]" => "logs-%{+YYYY.MM.dd}" }
+    }
+  }
+}
+
+output {
+  elasticsearch {
+    hosts => ["http://elasticsearch:9200"]
+    index => "%{[@metadata][target_index]}"
+  }
+
+  stdout {
+    codec => rubydebug
+  }
+}

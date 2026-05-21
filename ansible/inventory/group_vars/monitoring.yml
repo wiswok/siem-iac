@@ -1,0 +1,25 @@
+monitoring_root: "{{ ruta_base_siem }}/monitoring"
+
+prometheus_container_name: prometheus
+alertmanager_container_name: alertmanager
+grafana_container_name: grafana
+blackbox_container_name: blackbox
+
+prometheus_port: 9090
+alertmanager_port: 9093
+grafana_port: 3000
+blackbox_port: 9115
+
+prometheus_version: "v2.53.1"
+alertmanager_version: "v0.27.0"
+grafana_version: "11.1.4"
+blackbox_version: "v0.25.0"
+
+grafana_admin_user: admin
+grafana_admin_password: !vault |
+          $ANSIBLE_VAULT;1.1;AES256
+          32383464343737306533373332613637633163313638363436333263613034623630353139393133
+          6539656364306465336130326335623038623363316138360a643038613566346134396539386132
+          34306565376565323230643435633136316464393438396136653832303031313361633132613266
+          3862363662303162300a653763643334333137346233346363626639666364393631656561613336
+          6464

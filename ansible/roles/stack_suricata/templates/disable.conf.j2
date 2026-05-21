@@ -1,0 +1,18 @@
+# ============================================================
+# Reglas desactivadas para suricata-update
+# ============================================================
+
+# --- Protocolos industriales: no aplican en este laboratorio ---
+re:dnp3
+re:modbus
+re:enip
+re:cip
+
+# --- Decoder events ruidosos por offloads en NIC virtio ---
+# Estas firmas no son amenazas reales: son señales internas que
+# Suricata emite cuando el socket AF_PACKET o el parser IPv4 reciben
+# frames "truncados" (el kernel entrega superpaquetes TSO/GRO/GSO ya
+# ensamblados mayores que el MTU). Se mitigan desactivando offloads
+# en la NIC (ver suricata-nic-offloads.service) y silenciando los SIDs.
+2200021   # decoder.ipv4.trunc_pkt
+2200074   # decoder.af_packet.truncated_packet

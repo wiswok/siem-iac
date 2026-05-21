@@ -1,0 +1,42 @@
+name: "Wazuh - Agente desconectado o detenido"
+type: any
+index: wazuh-alerts-*
+
+# Cubre tanto la desconexión por timeout (rule 504, requiere
+# agents_disconnection_alert_time > 0 en el manager) como la parada grácil
+# del servicio (rule 506), evitando el blind-spot de un atacante con root
+# que ejecuta `systemctl stop wazuh-agent`.
+filter:
+  - query:
+      query_string:
+        query: "rule.id: 504 OR rule.id: 506"
+
+query_key: agent.name
+
+realert:
+  hours: 1
+
+alert_missing_value: "?"
+
+alert: telegram
+telegram_bot_token: "{{ telegram_bot_token }}"
+telegram_room_id: "{{ telegram_chat_id }}"
+telegram_parse_mode: html
+
+alert_text_type: alert_text_only
+alert_text: |
+  🟠 <b>[SIEM] Agente Wazuh desconectado</b>
+  📌 <b>Resumen:</b> Se ha perdido la conexión con un agente Wazuh
+  📍 <b>Agente:</b> {0}
+  🆔 <b>ID agente:</b> {1}
+  📋 <b>Regla:</b> {2} — {3}
+  ⚠️ <b>Nivel:</b> {4}
+  🕒 <b>Timestamp:</b> {5}
+  🔍 <a href="{{ kibana_public_url }}/app/discover#/?_g=(time:(from:now-1h,to:now))&_a=(query:(language:kuery,query:'rule.id:{1} and agent.name:%22{0}%22'))">Ver en Kibana</a>
+alert_text_args:
+  - agent.name
+  - agent.id
+  - rule.id
+  - rule.description
+  - rule.level
+  - "@timestamp"

@@ -1,0 +1,28 @@
+# Filebeat interno del contenedor Wazuh Manager neutralizado para esta arquitectura.
+# Mantiene el proceso vivo, pero no envía datos al indexer interno.
+# El envío real a ELK lo hace filebeat-wazuh externo -> Logstash -> Elasticsearch.
+
+filebeat.modules:
+  - module: wazuh
+    alerts:
+      enabled: true
+    archives:
+      enabled: false
+
+setup.template.enabled: false
+setup.ilm.enabled: false
+
+output.file:
+  path: /tmp/filebeat-disabled
+  filename: wazuh-manager
+  rotate_every_kb: 1024
+  number_of_files: 2
+
+logging.metrics.enabled: false
+
+seccomp:
+  default_action: allow
+  syscalls:
+    - action: allow
+      names:
+        - rseq

@@ -1,0 +1,8 @@
+---
+- name: Despliegue de Filebeat para Suricata
+  hosts: suricata
+  become: true
+  gather_facts: true
+
+  roles:
+    - filebeat_suricata

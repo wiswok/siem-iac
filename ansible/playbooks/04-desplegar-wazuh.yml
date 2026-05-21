@@ -1,0 +1,8 @@
+---
+- name: Despliegue del stack Wazuh
+  hosts: wazuh
+  become: true
+  gather_facts: true
+
+  roles:
+    - stack_wazuh

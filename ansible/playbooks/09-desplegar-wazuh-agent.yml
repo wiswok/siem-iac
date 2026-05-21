@@ -1,0 +1,8 @@
+---
+- name: Despliegue de agente Wazuh
+  hosts: wazuh_agents
+  become: true
+  gather_facts: true
+
+  roles:
+    - wazuh_agent

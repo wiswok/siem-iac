@@ -1,0 +1,8 @@
+suricata_root: "{{ ruta_base_siem }}/suricata"
+
+suricata_container_name: suricata
+suricata_image: "jasonish/suricata:7.0"
+
+suricata_interface: "eth0"
+
+filebeat_suricata_root: "{{ ruta_base_siem }}/filebeat-suricata"

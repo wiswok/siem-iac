@@ -1,0 +1,43 @@
+name: "Suricata - Actividad anómala detectada"
+type: frequency
+index: suricata-*
+
+num_events: 30
+timeframe:
+  minutes: 5
+
+query_key: alert.signature
+
+filter:
+  - query:
+      query_string:
+        query: >
+          event_type: alert
+          AND _exists_: src_ip
+          AND _exists_: dest_ip
+          AND NOT alert.signature_id:[2200000 TO 2299999]
+
+realert:
+  minutes: 10
+
+alert_missing_value: "?"
+
+alert: telegram
+telegram_bot_token: "{{ telegram_bot_token }}"
+telegram_room_id: "{{ telegram_chat_id }}"
+telegram_parse_mode: html
+
+alert_text_type: alert_text_only
+alert_text: |
+  🟠 <b>[SIEM] Actividad Anómala — Suricata</b>
+  📌 <b>Resumen:</b> Ráfaga de alertas de la misma firma en una ventana corta
+  📋 <b>Firma:</b> {0}
+  🔢 <b>Eventos:</b> {1} en 5 minutos
+  🌐 <b>IP origen (última):</b> {2}
+  🎯 <b>IP destino (última):</b> {3}
+  🔍 <a href="{{ kibana_public_url }}/app/discover#/?_g=(time:(from:now-1h,to:now))&_a=(query:(language:kuery,query:'alert.signature:%22{0}%22'))">Ver en Kibana</a>
+alert_text_args:
+  - alert.signature
+  - num_hits
+  - src_ip
+  - dest_ip

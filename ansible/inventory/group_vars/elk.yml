@@ -1,0 +1,20 @@
+elk_root: "{{ ruta_base_siem }}/elk"
+
+elasticsearch_container_name: elasticsearch
+kibana_container_name: kibana
+logstash_container_name: logstash
+
+elasticsearch_port: 9200
+kibana_port: 5601
+logstash_beats_port: 5044
+
+elasticsearch_version: "8.14.3"
+kibana_version: "8.14.3"
+logstash_version: "8.14.3"
+
+elasticsearch_heap: "1g"
+elasticsearch_cluster_name: "siem-lab"
+elasticsearch_node_name: "sec-core"
+elasticsearch_security_enabled: false
+
+

@@ -1,0 +1,8 @@
+---
+- name: Despliegue de Suricata
+  hosts: suricata
+  become: true
+  gather_facts: true
+
+  roles:
+    - stack_suricata

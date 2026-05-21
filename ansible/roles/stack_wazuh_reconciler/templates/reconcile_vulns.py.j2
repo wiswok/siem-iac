@@ -1,0 +1,158 @@
+#!/usr/bin/env python3
+"""Reconcile wazuh-vulnerabilities-inventory against live syscollector state.
+
+For each active agent, fetches the current list of installed packages via
+the Wazuh Manager API (/syscollector/{id}/packages) and deletes inventory
+docs in Elasticsearch whose (agent.id, package.name) pair is no longer
+present. This removes stale CVE entries for packages that have been
+uninstalled or upgraded, closing the gap left when Wazuh VD fails to emit
+rule 23502 (solved) for every CVE of a removed package.
+"""
+import base64
+import json
+import os
+import ssl
+import sys
+import urllib.error
+import urllib.request
+from datetime import datetime, timezone
+
+WAZUH_API = "https://127.0.0.1:{{ wazuh_api_port }}"
+ES_URL = "http://127.0.0.1:{{ elasticsearch_port }}"
+INVENTORY_INDEX = "wazuh-vulnerabilities-inventory"
+API_USER = os.environ.get("WAZUH_API_USER", "wazuh")
+API_PASS = os.environ.get("WAZUH_API_PASS", "wazuh")
+
+SSL_CTX = ssl.create_default_context()
+SSL_CTX.check_hostname = False
+SSL_CTX.verify_mode = ssl.CERT_NONE
+
+
+def log(msg):
+    print(f"[{datetime.now(timezone.utc).isoformat(timespec='seconds')}] {msg}", flush=True)
+
+
+def http_json(method, url, *, headers=None, data=None, ctx=None, timeout=30):
+    hdrs = dict(headers or {})
+    body = None
+    if data is not None:
+        body = json.dumps(data).encode()
+        hdrs.setdefault("Content-Type", "application/json")
+    req = urllib.request.Request(url, data=body, method=method, headers=hdrs)
+    with urllib.request.urlopen(req, context=ctx, timeout=timeout) as resp:
+        raw = resp.read().decode()
+        return json.loads(raw) if raw else {}
+
+
+def get_token():
+    auth = base64.b64encode(f"{API_USER}:{API_PASS}".encode()).decode()
+    req = urllib.request.Request(
+        f"{WAZUH_API}/security/user/authenticate?raw=true",
+        method="POST",
+        headers={"Authorization": f"Basic {auth}"},
+    )
+    with urllib.request.urlopen(req, context=SSL_CTX, timeout=15) as resp:
+        return resp.read().decode().strip()
+
+
+def get_agents(token):
+    r = http_json(
+        "GET",
+        f"{WAZUH_API}/agents?status=active&select=id,name&limit=500",
+        headers={"Authorization": f"Bearer {token}"},
+        ctx=SSL_CTX,
+    )
+    return [
+        (a["id"], a.get("name", "?"))
+        for a in r["data"]["affected_items"]
+        if a["id"] != "000"
+    ]
+
+
+def get_packages(token, agent_id):
+    packages = set()
+    # Fetch from multiple formats to ensure coverage (deb, snap, etc.)
+    for pkg_format in ["deb", "snap"]:
+        offset = 0
+        limit = 500
+        while True:
+            url = (
+                f"{WAZUH_API}/syscollector/{agent_id}/packages"
+                f"?offset={offset}&limit={limit}&select=name&format={pkg_format}"
+            )
+            r = http_json(
+                "GET", url, headers={"Authorization": f"Bearer {token}"}, ctx=SSL_CTX
+            )
+            items = r.get("data", {}).get("affected_items", [])
+            for p in items:
+                name = p.get("name")
+                if name:
+                    packages.add(name)
+            total = r.get("data", {}).get("total_affected_items", 0)
+            offset += len(items)
+            if offset >= total or not items:
+                break
+    return packages
+
+
+def delete_stale(agent_id, installed):
+    if not installed:
+        return 0, "empty syscollector, skipped for safety"
+    body = {
+        "query": {
+            "bool": {
+                "must": [{"term": {"agent_id": agent_id}}],
+                "must_not": [
+                    {
+                        "terms": {
+                            "package_name": sorted(installed)
+                        }
+                    }
+                ],
+            }
+        }
+    }
+    r = http_json(
+        "POST",
+        f"{ES_URL}/{INVENTORY_INDEX}/_delete_by_query?refresh=true&conflicts=proceed",
+        data=body,
+    )
+    return r.get("deleted", 0), None
+
+
+def main():
+    try:
+        token = get_token()
+    except (urllib.error.URLError, urllib.error.HTTPError) as e:
+        log(f"FATAL: auth failed: {e}")
+        return 2
+    try:
+        agents = get_agents(token)
+    except (urllib.error.URLError, urllib.error.HTTPError) as e:
+        log(f"FATAL: listing agents failed: {e}")
+        return 2
+
+    log(f"reconciling {len(agents)} agent(s)")
+    total = 0
+    for aid, aname in agents:
+        try:
+            pkgs = get_packages(token, aid)
+        except (urllib.error.URLError, urllib.error.HTTPError) as e:
+            log(f"agent {aid} ({aname}): package fetch FAILED: {e}")
+            continue
+        try:
+            deleted, note = delete_stale(aid, pkgs)
+        except (urllib.error.URLError, urllib.error.HTTPError) as e:
+            log(f"agent {aid} ({aname}): delete FAILED: {e}")
+            continue
+        if note:
+            log(f"agent {aid} ({aname}): {note}")
+        else:
+            log(f"agent {aid} ({aname}): {len(pkgs)} installed, {deleted} stale removed")
+            total += deleted
+    log(f"done: {total} stale doc(s) removed in total")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

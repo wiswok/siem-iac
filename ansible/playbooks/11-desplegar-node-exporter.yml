@@ -1,0 +1,8 @@
+---
+- name: Desplegar Node Exporter en todos los nodos
+  hosts: all
+  become: true
+  gather_facts: true
+
+  roles:
+    - node_exporter

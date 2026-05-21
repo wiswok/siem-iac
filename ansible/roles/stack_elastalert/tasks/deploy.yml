@@ -1,0 +1,89 @@
+---
+- name: Crear directorios de ElastAlert2
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ elastalert_root }}"
+    - "{{ elastalert_root }}/rules"
+
+- name: Copiar configuración de ElastAlert2
+  ansible.builtin.template:
+    src: config.yml.j2
+    dest: "{{ elastalert_root }}/config.yml"
+    mode: "0644"
+  notify: Reiniciar ElastAlert2
+
+- name: Copiar reglas de ElastAlert2
+  ansible.builtin.template:
+    src: "rules/{{ item }}.j2"
+    dest: "{{ elastalert_root }}/rules/{{ item }}"
+    mode: "0644"
+  loop:
+    - wazuh_critica.yml
+    - wazuh_brute_force.yml
+    - wazuh_agente_desconectado.yml
+    - wazuh_fim.yml
+    - wazuh_sudo_fallido.yml
+    - wazuh_vuln_nuevo.yml
+    - wazuh_vuln_resuelto.yml
+    - suricata_anomalia.yml
+    - suricata_critica.yml
+  notify: Reiniciar ElastAlert2
+
+- name: Copiar docker-compose de ElastAlert2
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ elastalert_root }}/docker-compose.yml"
+    mode: "0644"
+
+- name: Levantar ElastAlert2
+  community.docker.docker_compose_v2:
+    project_src: "{{ elastalert_root }}"
+    state: present
+
+# match_body queda sin indexar: evitamos el conflicto text/object cuando
+# un query_key compuesto con .keyword genera paths tipo agent.name.keyword,data...
+# El resto de campos top-level se declaran para que el índice vacío sea
+# queryable desde el primer ciclo de ElastAlert (sort por alert_time).
+- name: Aplicar index template para elastalert_status
+  ansible.builtin.uri:
+    url: "http://10.10.30.10:9200/_index_template/elastalert_status"
+    method: PUT
+    body_format: json
+    body:
+      index_patterns: ["elastalert_status"]
+      template:
+        mappings:
+          properties:
+            "@timestamp":
+              type: date
+            alert_time:
+              type: date
+            alert_sent:
+              type: boolean
+            aggregate_id:
+              type: keyword
+            rule_name:
+              type: keyword
+            match_body:
+              type: object
+              enabled: false
+
+- name: Recrear índice elastalert_status para aplicar el nuevo template
+  when: elastalert_recreate_status_index | default(false) | bool
+  block:
+    - name: Borrar índice elastalert_status existente
+      ansible.builtin.uri:
+        url: "http://10.10.30.10:9200/elastalert_status"
+        method: DELETE
+        status_code: [200, 404]
+
+    # ElastAlert hace search del índice cada ciclo; si no existe falla.
+    # Lo creamos vacío para que herede el template inmediatamente.
+    - name: Crear índice elastalert_status vacío
+      ansible.builtin.uri:
+        url: "http://10.10.30.10:9200/elastalert_status"
+        method: PUT
+        status_code: [200, 400]

@@ -1,0 +1,17 @@
+services:
+  wazuh.manager:
+    image: wazuh/wazuh-manager:{{ wazuh_version }}
+    container_name: {{ wazuh_manager_container_name }}
+    hostname: wazuh-manager
+    restart: unless-stopped
+    ports:
+      - "{{ wazuh_manager_port }}:1514/tcp"
+      - "{{ wazuh_manager_port }}:1514/udp"
+      - "{{ wazuh_manager_registration_port }}:1515/tcp"
+      - "{{ wazuh_api_port }}:55000/tcp"
+    volumes:
+      - ./manager/api-configuration:/var/ossec/api/configuration
+      - ./manager/etc:/var/ossec/etc
+      - ./manager/logs:/var/ossec/logs
+      - ./manager/queue:/var/ossec/queue
+      - ./manager/filebeat.yml:/etc/filebeat/filebeat.yml

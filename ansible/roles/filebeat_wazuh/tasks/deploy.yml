@@ -1,0 +1,28 @@
+---
+- name: Crear directorio raíz de Filebeat Wazuh
+  ansible.builtin.file:
+    path: "{{ filebeat_wazuh_root }}"
+    state: directory
+    mode: "0755"
+
+- name: Copiar configuración de Filebeat para Wazuh
+  ansible.builtin.template:
+    src: filebeat.yml.j2
+    dest: "{{ filebeat_wazuh_root }}/filebeat.yml"
+    mode: "0644"
+  notify: Reiniciar filebeat-wazuh
+
+- name: Levantar Filebeat para Wazuh
+  community.docker.docker_container:
+    name: filebeat-wazuh
+    image: docker.elastic.co/beats/filebeat:8.14.3
+    state: started
+    restart_policy: unless-stopped
+    user: root
+    volumes:
+      - "{{ filebeat_wazuh_root }}/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro"
+      - "{{ wazuh_root }}/manager/logs:/var/ossec/logs:ro"
+    command:
+      - "filebeat"
+      - "-e"
+      - "-strict.perms=false"

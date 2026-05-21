@@ -1,0 +1,106 @@
+---
+- name: Crear directorio raíz de monitoring
+  ansible.builtin.file:
+    path: "{{ monitoring_root }}"
+    state: directory
+    mode: "0755"
+
+- name: Crear directorios de configuración de monitoring
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ monitoring_root }}/prometheus"
+    - "{{ monitoring_root }}/prometheus/rules"
+    - "{{ monitoring_root }}/alertmanager"
+    - "{{ monitoring_root }}/blackbox"
+    - "{{ monitoring_root }}/grafana"
+    - "{{ monitoring_root }}/grafana/provisioning"
+    - "{{ monitoring_root }}/grafana/provisioning/datasources"
+    - "{{ monitoring_root }}/grafana/provisioning/dashboards"
+    - "{{ monitoring_root }}/grafana/dashboards"
+
+- name: Crear directorio de datos de Grafana con permisos correctos
+  ansible.builtin.file:
+    path: "{{ monitoring_root }}/grafana/data"
+    state: directory
+    owner: "472"
+    group: "472"
+    mode: "0775"
+
+- name: Copiar docker-compose de monitoring
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ monitoring_root }}/docker-compose.yml"
+    mode: "0644"
+
+- name: Copiar configuración de Prometheus
+  ansible.builtin.template:
+    src: prometheus.yml.j2
+    dest: "{{ monitoring_root }}/prometheus/prometheus.yml"
+    mode: "0644"
+  notify: Reiniciar Prometheus
+
+- name: Copiar reglas de alertas de Prometheus
+  ansible.builtin.template:
+    src: prometheus_rules.yml.j2
+    dest: "{{ monitoring_root }}/prometheus/rules/infraestructura.yml"
+    mode: "0644"
+  notify: Reiniciar Prometheus
+
+- name: Copiar configuración de Alertmanager
+  ansible.builtin.template:
+    src: alertmanager.yml.j2
+    dest: "{{ monitoring_root }}/alertmanager/alertmanager.yml"
+    mode: "0644"
+  notify: Reiniciar Alertmanager
+
+- name: Copiar configuración de Blackbox Exporter
+  ansible.builtin.template:
+    src: blackbox.yml.j2
+    dest: "{{ monitoring_root }}/blackbox/blackbox.yml"
+    mode: "0644"
+
+- name: Copiar datasource de Grafana
+  ansible.builtin.template:
+    src: grafana/provisioning/datasources/datasource.yml.j2
+    dest: "{{ monitoring_root }}/grafana/provisioning/datasources/datasource.yml"
+    mode: "0644"
+
+- name: Copiar provider de dashboards de Grafana
+  ansible.builtin.template:
+    src: grafana/provisioning/dashboards/provider.yml.j2
+    dest: "{{ monitoring_root }}/grafana/provisioning/dashboards/provider.yml"
+    mode: "0644"
+
+- name: Copiar dashboard base de Grafana
+  ansible.builtin.template:
+    src: grafana/dashboards/node.json.j2
+    dest: "{{ monitoring_root }}/grafana/dashboards/node.json"
+    mode: "0644"
+
+- name: Levantar stack de monitoring
+  community.docker.docker_compose_v2:
+    project_src: "{{ monitoring_root }}"
+    state: present
+
+- name: Esperar a que Prometheus responda
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ prometheus_port }}/-/ready"
+    method: GET
+    status_code: 200
+  register: prometheus_status
+  retries: 30
+  delay: 10
+  until: prometheus_status.status == 200
+
+- name: Esperar a que Grafana responda
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ grafana_port }}/login"
+    method: GET
+    status_code: 200
+  register: grafana_status
+  retries: 30
+  delay: 10
+  until: grafana_status.status == 200

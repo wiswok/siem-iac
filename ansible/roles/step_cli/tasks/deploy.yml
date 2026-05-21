@@ -1,0 +1,67 @@
+---
+- name: Instalar dependencias para el repositorio de Smallstep
+  ansible.builtin.apt:
+    name:
+      - curl
+      - gpg
+      - ca-certificates
+    state: present
+    update_cache: true
+
+- name: Crear directorio para keyrings APT
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Descargar clave GPG del repositorio de Smallstep
+  ansible.builtin.get_url:
+    url: https://packages.smallstep.com/keys/apt/repo-signing-key.gpg
+    dest: /etc/apt/keyrings/smallstep.asc
+    mode: "0644"
+
+- name: Añadir repositorio APT de Smallstep
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/smallstep.sources
+    mode: "0644"
+    content: |
+      Types: deb
+      URIs: https://packages.smallstep.com/stable/debian
+      Suites: debs
+      Components: main
+      Signed-By: /etc/apt/keyrings/smallstep.asc
+
+- name: Instalar step-cli
+  ansible.builtin.apt:
+    name: step-cli
+    state: present
+    update_cache: true
+
+- name: Comprobar si step ya está bootstrappeado
+  ansible.builtin.stat:
+    path: "{{ step_ca_bootstrap_path }}/config/defaults.json"
+  register: step_bootstrap_defaults
+
+- name: Bootstrap de step CLI contra la CA interna
+  ansible.builtin.command:
+    cmd: >
+      step ca bootstrap
+      --ca-url https://ca.lab.wiswok.net:9000
+      --fingerprint {{ step_ca_fingerprint_runtime | default(step_ca_fingerprint) }}
+  environment:
+    STEPPATH: "{{ step_ca_bootstrap_path }}"
+  when: not step_bootstrap_defaults.stat.exists
+  changed_when: true
+
+- name: Instalar root CA en el trust store del sistema
+  ansible.builtin.copy:
+    src: "{{ step_ca_dir }}/certs/root_ca.crt"
+    dest: /usr/local/share/ca-certificates/wiswok-lab-root-ca.crt
+    remote_src: true
+    mode: "0644"
+  register: _root_ca_install
+
+- name: Actualizar trust store del sistema
+  ansible.builtin.command: update-ca-certificates
+  when: _root_ca_install.changed
+  changed_when: true

@@ -1,0 +1,5 @@
+---
+- name: Despliegue de ElastAlert2
+  hosts: elastalert
+  roles:
+    - stack_elastalert

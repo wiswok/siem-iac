@@ -1,0 +1,11 @@
+Este fichero es solo una plantilla. Para preparar el entorno:
+
+  openssl rand -base64 32 > .vault_pass
+  chmod 0600 .vault_pass
+
+La password real NO se commitea. Guárdala en un gestor (Bitwarden,
+1Password, pass, etc.). En CI/CD se inyecta desde la variable
+protegida ANSIBLE_VAULT_PASSWORD.
+
+Si clonas el repo y ya existe un .vault_pass válido en otro sitio
+(por ejemplo, otro equipo, un keyring), copialo tal cual aquí.

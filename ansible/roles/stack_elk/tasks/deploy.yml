@@ -1,0 +1,100 @@
+---
+- name: Crear directorio raíz de ELK
+  ansible.builtin.file:
+    path: "{{ elk_root }}"
+    state: directory
+    mode: "0755"
+
+- name: Crear directorio de configuración de Elasticsearch
+  ansible.builtin.file:
+    path: "{{ elk_root }}/elasticsearch"
+    state: directory
+    mode: "0755"
+
+- name: Crear directorio de datos de Elasticsearch con permisos correctos
+  ansible.builtin.file:
+    path: "{{ elk_root }}/elasticsearch/data"
+    state: directory
+    owner: "1000"
+    group: "0"
+    mode: "0775"
+
+- name: Crear directorio de configuración de Kibana
+  ansible.builtin.file:
+    path: "{{ elk_root }}/kibana"
+    state: directory
+    mode: "0755"
+
+- name: Crear directorio de configuración de Logstash
+  ansible.builtin.file:
+    path: "{{ elk_root }}/logstash"
+    state: directory
+    mode: "0755"
+
+- name: Crear directorio de pipelines de Logstash
+  ansible.builtin.file:
+    path: "{{ elk_root }}/logstash/pipeline"
+    state: directory
+    mode: "0755"
+
+- name: Copiar docker-compose del stack ELK
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ elk_root }}/docker-compose.yml"
+    mode: "0644"
+
+- name: Copiar configuración de Elasticsearch
+  ansible.builtin.template:
+    src: elasticsearch.yml.j2
+    dest: "{{ elk_root }}/elasticsearch/elasticsearch.yml"
+    mode: "0644"
+
+- name: Copiar configuración de Kibana
+  ansible.builtin.template:
+    src: kibana.yml.j2
+    dest: "{{ elk_root }}/kibana/kibana.yml"
+    mode: "0644"
+
+- name: Copiar configuración de Logstash
+  ansible.builtin.template:
+    src: logstash.yml.j2
+    dest: "{{ elk_root }}/logstash/logstash.yml"
+    mode: "0644"
+
+- name: Copiar pipeline principal de Logstash
+  ansible.builtin.template:
+    src: logstash.conf.j2
+    dest: "{{ elk_root }}/logstash/pipeline/logstash.conf"
+    mode: "0644"
+
+- name: Levantar stack ELK con Docker Compose (con reintentos ante fallos de pull)
+  community.docker.docker_compose_v2:
+    project_src: "{{ elk_root }}"
+    state: present
+  register: _elk_compose_up
+  retries: 3
+  delay: 15
+  until: _elk_compose_up is succeeded
+
+- name: Esperar a que Elasticsearch responda
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ elasticsearch_port }}"
+    method: GET
+    status_code: 200
+  register: elasticsearch_status
+  retries: 30
+  delay: 10
+  until: elasticsearch_status.status == 200
+
+- name: Esperar a que Kibana esté completamente disponible (api/status overall available)
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ kibana_port }}/api/status"
+    method: GET
+    return_content: true
+    status_code: 200
+  register: kibana_status
+  retries: 60
+  delay: 5
+  until:
+    - kibana_status.status == 200
+    - (kibana_status.json.status.overall.level | default('')) == "available"

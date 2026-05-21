@@ -1,0 +1,190 @@
+---
+- name: Obtener data views existentes de Kibana
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ kibana_port }}/api/data_views"
+    method: GET
+    headers:
+      kbn-xsrf: "true"
+    status_code: 200
+  register: kibana_data_views
+
+- name: Guardar lista de títulos de data views existentes
+  ansible.builtin.set_fact:
+    kibana_data_view_titles: >-
+      {{ kibana_data_views.json.data_view | default([]) | map(attribute='title') | list }}
+
+- name: Crear data view de Suricata con ID fijo (saved objects API)
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ kibana_port }}/api/saved_objects/index-pattern/suricata-dataview?overwrite=true"
+    method: POST
+    headers:
+      kbn-xsrf: "true"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      attributes:
+        title: "suricata-*"
+        timeFieldName: "@timestamp"
+    status_code:
+      - 200
+      - 201
+
+- name: Crear Ingest Pipeline para normalizar inventario
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ elasticsearch_port }}/_ingest/pipeline/wazuh-vulnerability-inventory-pipeline"
+    method: PUT
+    headers:
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      description: "Normaliza campos de inventario para coincidir con alertas originales"
+      processors:
+        - script:
+            lang: "painless"
+            source: |
+              if (ctx.latest_event != null) {
+                // Reconstruir estructura original para el Dashboard
+                if (ctx.agent == null) ctx.agent = [:];
+                ctx.agent['id'] = ctx.agent_id;
+                if (ctx.latest_event['agent.name.keyword'] != null) {
+                  ctx.agent['name'] = ctx.latest_event['agent.name.keyword'];
+                }
+
+                if (ctx.data == null) ctx.data = [:];
+                if (ctx.data['vulnerability'] == null) ctx.data['vulnerability'] = [:];
+                ctx.data['vulnerability']['cve'] = ctx.cve_id;
+                if (ctx.data['vulnerability']['package'] == null) ctx.data['vulnerability']['package'] = [:];
+                ctx.data['vulnerability']['package']['name'] = ctx.package_name;
+                if (ctx.latest_event['data.vulnerability.package.version.keyword'] != null) {
+                  ctx.data['vulnerability']['package']['version'] = ctx.latest_event['data.vulnerability.package.version.keyword'];
+                }
+
+                if (ctx.latest_event['data.vulnerability.severity.keyword'] != null) {
+                  ctx.data['vulnerability']['severity'] = ctx.latest_event['data.vulnerability.severity.keyword'];
+                }
+
+                if (ctx.latest_event['rule.id.keyword'] != null) {
+                  if (ctx.rule == null) ctx.rule = [:];
+                  ctx.rule['id'] = ctx.latest_event['rule.id.keyword'];
+                }
+                if (ctx.latest_event['rule.description.keyword'] != null) {
+                  if (ctx.rule == null) ctx.rule = [:];
+                  ctx.rule['description'] = ctx.latest_event['rule.description.keyword'];
+                }
+              }
+    status_code: [200, 201]
+
+- name: Detener transform de Inventario de Vulnerabilidades (si existe)
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ elasticsearch_port }}/_transform/wazuh-vulnerabilities-inventory/_stop?force=true"
+    method: POST
+    status_code: [200, 404]
+
+- name: Borrar transform de Inventario de Vulnerabilidades (si existe)
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ elasticsearch_port }}/_transform/wazuh-vulnerabilities-inventory"
+    method: DELETE
+    status_code: [200, 404]
+
+- name: Crear transform de Inventario de Vulnerabilidades
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ elasticsearch_port }}/_transform/wazuh-vulnerabilities-inventory?defer_validation=true"
+    method: PUT
+    headers:
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      source:
+        index: "wazuh-alerts-*"
+        query:
+          term:
+            rule.groups.keyword: "vulnerability-detector"
+      pivot:
+        group_by:
+          "agent_id": { terms: { field: "agent.id.keyword" } }
+          "cve_id": { terms: { field: "data.vulnerability.cve.keyword" } }
+          "package_name": { terms: { field: "data.vulnerability.package.name.keyword" } }
+        aggregations:
+          latest_event:
+            top_metrics:
+              metrics:
+                - { field: "rule.id.keyword" }
+                - { field: "data.vulnerability.severity.keyword" }
+                - { field: "data.vulnerability.package.version.keyword" }
+                - { field: "agent.name.keyword" }
+                - { field: "rule.description.keyword" }
+                - { field: "@timestamp" }
+              sort: { "@timestamp": "desc" }
+      dest:
+        index: "wazuh-vulnerabilities-inventory"
+        pipeline: "wazuh-vulnerability-inventory-pipeline"
+      sync:
+        time:
+          field: "@timestamp"
+          delay: "60s"
+      description: "Estado actual de cada vulnerabilidad por agente/paquete"
+    status_code: [200, 201]
+
+- name: Iniciar transform de Inventario de Vulnerabilidades
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ elasticsearch_port }}/_transform/wazuh-vulnerabilities-inventory/_start"
+    method: POST
+    status_code: [200, 409]
+
+- name: Crear data view de Inventario de Vulnerabilidades
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ kibana_port }}/api/saved_objects/index-pattern/wazuh-vulnerabilities-inventory?overwrite=true"
+    method: POST
+    headers:
+      kbn-xsrf: "true"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      attributes:
+        title: "wazuh-vulnerabilities-inventory"
+        timeFieldName: "latest_event.@timestamp"
+    status_code: [200, 201]
+
+- name: Crear data view de Wazuh con ID fijo (saved objects API)
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ kibana_port }}/api/saved_objects/index-pattern/wazuh-dataview?overwrite=true"
+    method: POST
+    headers:
+      kbn-xsrf: "true"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      attributes:
+        title: "wazuh-alerts-*"
+        timeFieldName: "@timestamp"
+        fieldFormatMap: >-
+          {
+            "rule.id": {
+              "id": "color",
+              "params": {
+                "fieldType": "string",
+                "colors": [
+                  {"regex": "^23502$", "background": "#B7E1CD", "color": "#0D522C"},
+                  {"regex": "^23503$", "background": "#F7E139", "color": "#000000"},
+                  {"regex": "^23504$", "background": "#F2A633", "color": "#000000"},
+                  {"regex": "^23505$", "background": "#E7664C", "color": "#FFFFFF"},
+                  {"regex": "^23506$", "background": "#721C24", "color": "#FFFFFF"}
+                ]
+              }
+            },
+            "data.vulnerability.severity": {
+              "id": "color",
+              "params": {
+                "fieldType": "string",
+                "colors": [
+                  {"regex": "^Critical$", "background": "#721C24", "color": "#FFFFFF"},
+                  {"regex": "^High$", "background": "#E7664C", "color": "#FFFFFF"},
+                  {"regex": "^Medium$", "background": "#F2A633", "color": "#000000"},
+                  {"regex": "^Low$", "background": "#F7E139", "color": "#000000"}
+                ]
+              }
+            }
+          }
+    status_code:
+      - 200
+      - 201

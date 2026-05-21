@@ -1,0 +1,44 @@
+---
+- name: Crear directorios de Traefik
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ traefik_dir }}",         mode: "0755" }
+    - { path: "{{ traefik_dir }}/dynamic", mode: "0755" }
+    - { path: "{{ traefik_dir }}/acme",    mode: "0700" }
+
+- name: Copiar configuración estática de Traefik
+  ansible.builtin.template:
+    src: traefik.yml.j2
+    dest: "{{ traefik_dir }}/traefik.yml"
+    mode: "0644"
+
+- name: Copiar configuración dinámica de Traefik
+  ansible.builtin.template:
+    src: dynamic.yml.j2
+    dest: "{{ traefik_dir }}/dynamic/dynamic.yml"
+    mode: "0644"
+
+- name: Eliminar configuración estática TLS antigua (si existe, obsoleta con ACME)
+  ansible.builtin.file:
+    path: "{{ traefik_dir }}/dynamic/tls.yml"
+    state: absent
+
+- name: Copiar docker-compose de Traefik
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ traefik_dir }}/docker-compose.yml"
+    mode: "0644"
+
+- name: Levantar Traefik interno
+  community.docker.docker_compose_v2:
+    project_src: "{{ traefik_dir }}"
+    state: present
+
+- name: Esperar a que Traefik responda en 80
+  ansible.builtin.wait_for:
+    host: "127.0.0.1"
+    port: 80
+    timeout: 30

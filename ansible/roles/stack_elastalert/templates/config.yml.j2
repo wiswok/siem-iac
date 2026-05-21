@@ -1,0 +1,19 @@
+es_host: "10.10.30.10"
+es_port: {{ elasticsearch_port }}
+use_ssl: false
+verify_certs: false
+
+rules_folder: /opt/elastalert/rules
+
+run_every:
+  minutes: 1
+
+buffer_time:
+  minutes: 15
+
+alert_time_limit:
+  hours: 1
+
+alert_missing_value: "?"
+
+writeback_index: elastalert_status

@@ -1,0 +1,17 @@
+services:
+  step-ca:
+    image: smallstep/step-ca:0.27.4
+    container_name: {{ step_ca_container_name }}
+    user: "0:0"
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    environment:
+      DOCKER_STEPCA_INIT_NAME: "{{ step_ca_init_name }}"
+      DOCKER_STEPCA_INIT_DNS_NAMES: "{{ step_ca_init_dns }}"
+      DOCKER_STEPCA_INIT_PROVISIONER_NAME: "{{ step_ca_init_provisioner }}"
+      DOCKER_STEPCA_INIT_PASSWORD_FILE: "/home/step/secrets/password"
+      DOCKER_STEPCA_INIT_ACME: "true"
+      DOCKER_STEPCA_INIT_REMOTE_MANAGEMENT: "true"
+    volumes:
+      - {{ step_ca_dir }}:/home/step

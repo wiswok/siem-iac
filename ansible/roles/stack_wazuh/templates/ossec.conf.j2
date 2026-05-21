@@ -1,0 +1,190 @@
+<ossec_config>
+
+  <!-- ============================================================ -->
+  <!-- CONFIGURACIÓN GLOBAL                                         -->
+  <!-- ============================================================ -->
+  <global>
+    <jsonout_output>yes</jsonout_output>
+    <alerts_log>yes</alerts_log>
+    <logall>no</logall>
+    <logall_json>no</logall_json>
+    <email_notification>no</email_notification>
+    <memory_size>1024</memory_size>
+    <white_list>127.0.0.1</white_list>
+    <white_list>10.10.0.0/16</white_list>
+    <!-- Por defecto el manager marca agentes como "Disconnected" tras 10 min
+         sin keepalive pero no emite alerta (agents_disconnection_alert_time=0).
+         Lo habilitamos a 30 s para que dispare la regla 504 en cuanto pasa el
+         umbral de disconnection_time. -->
+    <agents_disconnection_alert_time>30s</agents_disconnection_alert_time>
+  </global>
+
+  <!-- ============================================================ -->
+  <!-- ALERTAS                                                       -->
+  <!-- ============================================================ -->
+  <alerts>
+    <log_alert_level>3</log_alert_level>
+    <email_alert_level>12</email_alert_level>
+  </alerts>
+
+  <!-- ============================================================ -->
+  <!-- REGISTRO DE AGENTES (auto-enrollment)                        -->
+  <!-- ============================================================ -->
+  <auth>
+    <disabled>no</disabled>
+    <port>1515</port>
+    <use_source_ip>no</use_source_ip>
+    <purge>yes</purge>
+    <use_password>no</use_password>
+    <ciphers>HIGH:!ADH:!EXP:!MD5:!RC4:!3DES:!CAMELLIA:@STRENGTH</ciphers>
+    <ssl_verify_host>no</ssl_verify_host>
+    <ssl_manager_cert>/var/ossec/etc/sslmanager.cert</ssl_manager_cert>
+    <ssl_manager_key>/var/ossec/etc/sslmanager.key</ssl_manager_key>
+    <ssl_auto_negotiate>no</ssl_auto_negotiate>
+  </auth>
+
+  <!-- ============================================================ -->
+  <!-- RECEPCIÓN DE AGENTES                                         -->
+  <!-- ============================================================ -->
+  <remote>
+    <connection>secure</connection>
+    <port>1514</port>
+    <protocol>tcp</protocol>
+    <queue_size>131072</queue_size>
+  </remote>
+
+  <!-- ============================================================ -->
+  <!-- ANÁLISIS DE LOGS DEL SISTEMA                                 -->
+  <!-- ============================================================ -->
+  <localfile>
+    <log_format>syslog</log_format>
+    <location>/var/log/syslog</location>
+  </localfile>
+
+  <localfile>
+    <log_format>syslog</log_format>
+    <location>/var/log/auth.log</location>
+  </localfile>
+
+  <localfile>
+    <log_format>syslog</log_format>
+    <location>/var/log/dpkg.log</location>
+  </localfile>
+
+  <localfile>
+    <log_format>command</log_format>
+    <command>df -P</command>
+    <frequency>360</frequency>
+  </localfile>
+
+  <localfile>
+    <log_format>full_command</log_format>
+    <command>netstat -tulpn | sort</command>
+    <alias>netstat listening ports</alias>
+    <frequency>360</frequency>
+  </localfile>
+
+  <!-- ============================================================ -->
+  <!-- SYSCHECK - INTEGRIDAD DE FICHEROS                            -->
+  <!-- ============================================================ -->
+  <syscheck>
+    <disabled>no</disabled>
+    <frequency>43200</frequency>
+    <scan_on_start>yes</scan_on_start>
+
+    <!-- Directorios críticos del sistema -->
+    <directories realtime="yes">/etc,/usr/bin,/usr/sbin</directories>
+    <directories realtime="yes">/bin,/sbin</directories>
+    <directories check_all="yes">/boot</directories>
+
+    <!-- Directorio del SIEM -->
+    <directories realtime="yes" report_changes="yes">{{ ruta_base_siem }}</directories>
+
+    <!-- Ignorar rutas con mucho ruido -->
+    <ignore>/etc/mtab</ignore>
+    <ignore>/etc/hosts.deny</ignore>
+    <ignore>/etc/mail/statistics</ignore>
+    <ignore>/etc/random-seed</ignore>
+    <ignore>/etc/adjtime</ignore>
+    <ignore>/etc/resolv.conf</ignore>
+
+    <auto_ignore frequency="10" timeframe="3600">no</auto_ignore>
+    <alert_new_files>yes</alert_new_files>
+    <remove_old_diff>yes</remove_old_diff>
+  </syscheck>
+
+  <!-- ============================================================ -->
+  <!-- ROOTCHECK - DETECCIÓN DE ROOTKITS                           -->
+  <!-- ============================================================ -->
+  <rootcheck>
+    <disabled>no</disabled>
+    <check_files>yes</check_files>
+    <check_trojans>yes</check_trojans>
+    <check_dev>yes</check_dev>
+    <check_sys>yes</check_sys>
+    <check_pids>yes</check_pids>
+    <check_ports>yes</check_ports>
+    <check_if>yes</check_if>
+    <frequency>43200</frequency>
+    <rootkit_files>etc/shared/rootkit_files.txt</rootkit_files>
+    <rootkit_trojans>etc/shared/rootkit_trojans.txt</rootkit_trojans>
+    <skip_nfs>yes</skip_nfs>
+  </rootcheck>
+
+  <!-- ============================================================ -->
+  <!-- VULNERABILITY DETECTION (Wazuh 4.8+)                         -->
+  <!-- ============================================================ -->
+  <vulnerability-detection>
+    <enabled>yes</enabled>
+    <index-status>no</index-status>
+    <feed-update-interval>1h</feed-update-interval>
+  </vulnerability-detection>
+
+  <indexer>
+    <enabled>no</enabled>
+  </indexer>
+
+  <!-- ============================================================ -->
+  <!-- ACTIVE RESPONSE                                              -->
+  <!-- ============================================================ -->
+{% if active_response_enabled | default(false) %}
+  <!-- Comando: bloquear IP con iptables (incluido por defecto en Wazuh) -->
+  <command>
+    <name>firewall-drop</name>
+    <executable>firewall-drop</executable>
+    <timeout_allowed>yes</timeout_allowed>
+  </command>
+
+  <!-- AR 1: Brute force SSH — reglas 5763 (8 intentos) y 5712 (muchos fallos) -->
+  <active-response>
+    <disabled>no</disabled>
+    <command>firewall-drop</command>
+    <location>local</location>
+    <rules_id>5763,5712</rules_id>
+    <timeout>{{ active_response_brute_force_timeout }}</timeout>
+  </active-response>
+
+  <!-- AR 2: Abuso de sudo — regla 5401 (3 intentos fallidos de sudo) -->
+  <active-response>
+    <disabled>no</disabled>
+    <command>firewall-drop</command>
+    <location>local</location>
+    <rules_id>5401</rules_id>
+    <timeout>{{ active_response_brute_force_timeout }}</timeout>
+  </active-response>
+
+  <!-- AR 3: Fallos de autenticación repetidos — regla 2502 -->
+  <active-response>
+    <disabled>no</disabled>
+    <command>firewall-drop</command>
+    <location>local</location>
+    <rules_id>2502</rules_id>
+    <timeout>{{ active_response_brute_force_timeout }}</timeout>
+  </active-response>
+{% else %}
+  <active-response>
+    <disabled>yes</disabled>
+  </active-response>
+{% endif %}
+
+</ossec_config>

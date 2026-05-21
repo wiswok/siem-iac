@@ -1,0 +1,31 @@
+api:
+  dashboard: {{ 'true' if traefik_dashboard_enabled else 'false' }}
+
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+
+  websecure:
+    address: ":443"
+
+providers:
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true
+
+certificatesResolvers:
+  stepca:
+    acme:
+      email: {{ traefik_acme_email | default('admin@lab.wiswok.net') }}
+      caServer: https://10.10.30.5:9000/acme/acme/directory
+      storage: /etc/traefik/acme/acme.json
+      certificatesDuration: 168
+      tlsChallenge: {}
+
+log:
+  level: INFO

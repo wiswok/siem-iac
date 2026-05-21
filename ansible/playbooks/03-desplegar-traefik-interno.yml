@@ -1,0 +1,6 @@
+---
+- name: Despliegue de Traefik interno
+  hosts: edge
+  become: true
+  roles:
+    - stack_traefik_internal

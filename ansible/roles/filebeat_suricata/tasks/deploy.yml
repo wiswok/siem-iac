@@ -1,0 +1,27 @@
+---
+- name: Crear directorio raíz de Filebeat Suricata
+  ansible.builtin.file:
+    path: "{{ filebeat_suricata_root }}"
+    state: directory
+    mode: "0755"
+
+- name: Copiar configuración de Filebeat
+  ansible.builtin.template:
+    src: filebeat.yml.j2
+    dest: "{{ filebeat_suricata_root }}/filebeat.yml"
+    mode: "0644"
+
+- name: Levantar Filebeat para enviar eve.json a Logstash
+  community.docker.docker_container:
+    name: filebeat-suricata
+    image: docker.elastic.co/beats/filebeat:8.14.3
+    state: started
+    restart_policy: unless-stopped
+    user: root
+    volumes:
+      - "{{ filebeat_suricata_root }}/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro"
+      - "{{ suricata_root }}/logs:/var/log/suricata:ro"
+    command:
+      - "filebeat"
+      - "-e"
+      - "-strict.perms=false"

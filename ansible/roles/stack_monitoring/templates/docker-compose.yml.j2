@@ -1,0 +1,50 @@
+services:
+  prometheus:
+    image: prom/prometheus:{{ prometheus_version }}
+    container_name: {{ prometheus_container_name }}
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
+    ports:
+      - "{{ prometheus_port }}:9090"
+    restart: unless-stopped
+
+  alertmanager:
+    image: prom/alertmanager:{{ alertmanager_version }}
+    container_name: {{ alertmanager_container_name }}
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      - "{{ alertmanager_port }}:9093"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:{{ grafana_version }}
+    container_name: {{ grafana_container_name }}
+    environment:
+      - GF_SECURITY_ADMIN_USER={{ grafana_admin_user }}
+      - GF_SECURITY_ADMIN_PASSWORD={{ grafana_admin_password }}
+    volumes:
+      - ./grafana/data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    ports:
+      - "{{ grafana_port }}:3000"
+    restart: unless-stopped
+
+  blackbox:
+    image: prom/blackbox-exporter:{{ blackbox_version }}
+    container_name: {{ blackbox_container_name }}
+    command:
+      - "--config.file=/etc/blackbox/blackbox.yml"
+    volumes:
+      - ./blackbox/blackbox.yml:/etc/blackbox/blackbox.yml:ro
+    ports:
+      - "{{ blackbox_port }}:9115"
+    restart: unless-stopped

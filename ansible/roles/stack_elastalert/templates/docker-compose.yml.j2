@@ -1,0 +1,11 @@
+services:
+  elastalert:
+    image: jertel/elastalert2:{{ elastalert_version }}
+    container_name: elastalert
+    restart: unless-stopped
+    entrypoint: ["elastalert", "--verbose", "--config", "/opt/elastalert/config.yml"]
+    environment:
+      - TZ=Europe/Madrid
+    volumes:
+      - {{ elastalert_root }}/config.yml:/opt/elastalert/config.yml:ro
+      - {{ elastalert_root }}/rules:/opt/elastalert/rules:ro

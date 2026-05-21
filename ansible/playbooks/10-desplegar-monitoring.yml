@@ -1,0 +1,8 @@
+---
+- name: Despliegue del stack de monitorización
+  hosts: monitoring
+  become: true
+  gather_facts: true
+
+  roles:
+    - stack_monitoring

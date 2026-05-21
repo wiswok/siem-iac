@@ -1,0 +1,52 @@
+name: "Wazuh - Vulnerabilidad nueva"
+type: new_term
+index: wazuh-alerts-*
+
+fields:
+  - data.vulnerability.cve.keyword
+  - agent.name.keyword
+
+terms_window_size:
+  days: 30
+
+window_step_size:
+  hours: 1
+
+use_terms_query: false
+
+filter:
+  - query_string:
+      query: "rule.groups: vulnerability-detector"
+  - exists:
+      field: data.vulnerability.cve
+
+query_key:
+  - agent.name.keyword
+  - data.vulnerability.cve.keyword
+
+realert:
+  hours: 24
+
+alert_missing_value: "?"
+
+alert: telegram
+telegram_bot_token: "{{ telegram_bot_token }}"
+telegram_room_id: "{{ telegram_chat_id }}"
+telegram_parse_mode: html
+
+alert_text_type: alert_text_only
+alert_text: |
+  🆕 <b>[SIEM] Nueva vulnerabilidad detectada — Wazuh</b>
+  📌 <b>Resumen:</b> CVE no observado antes en este agente
+  📍 <b>Agente:</b> {0}
+  🔖 <b>CVE:</b> {1}
+  📦 <b>Paquete:</b> {2}
+  ⚠️ <b>Severidad CVE:</b> {3}
+  📊 <b>CVSSv3:</b> {4}
+  🔍 <a href="{{ kibana_public_url }}/app/discover#/?_g=(time:(from:now-30d,to:now))&_a=(query:(language:kuery,query:'data.vulnerability.cve:%22{1}%22%20and%20agent.name:%22{0}%22'))">Ver en Kibana</a>
+alert_text_args:
+  - agent.name
+  - data.vulnerability.cve
+  - data.vulnerability.package.name
+  - data.vulnerability.severity
+  - data.vulnerability.cvss.cvss3.base_score

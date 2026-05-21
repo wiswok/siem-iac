@@ -1,0 +1,3 @@
+---
+- name: Ejecutar despliegue del stack de monitorización
+  ansible.builtin.import_tasks: deploy.yml

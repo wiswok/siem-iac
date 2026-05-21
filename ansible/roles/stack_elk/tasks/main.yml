@@ -1,0 +1,12 @@
+---
+- name: Ejecutar despliegue del stack ELK
+  ansible.builtin.import_tasks: deploy.yml
+
+- name: Ejecutar configuración de Kibana
+  ansible.builtin.import_tasks: configure.yml
+
+- name: Crear dashboards en Kibana
+  ansible.builtin.import_tasks: dashboards.yml
+
+- name: Crear dashboard de vulnerabilidades (Wazuh VD)
+  ansible.builtin.import_tasks: dashboards_cve.yml

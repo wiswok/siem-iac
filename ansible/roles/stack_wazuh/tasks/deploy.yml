@@ -1,0 +1,76 @@
+---
+- name: Crear directorio raíz de Wazuh
+  ansible.builtin.file:
+    path: "{{ wazuh_root }}"
+    state: directory
+    mode: "0755"
+
+- name: Crear directorios de Wazuh Manager
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ wazuh_root }}/manager"
+    - "{{ wazuh_root }}/manager/api-configuration"
+    - "{{ wazuh_root }}/manager/etc"
+    - "{{ wazuh_root }}/manager/logs"
+    - "{{ wazuh_root }}/manager/queue"
+
+- name: Copiar configuración neutra de Filebeat interno de Wazuh
+  ansible.builtin.template:
+    src: filebeat.yml.j2
+    dest: "{{ ruta_base_siem }}/wazuh/manager/filebeat.yml"
+    mode: "0644"
+
+- name: Copiar docker-compose de Wazuh Manager
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ wazuh_root }}/docker-compose.yml"
+    mode: "0644"
+
+- name: Levantar Wazuh Manager
+  community.docker.docker_compose_v2:
+    project_src: "{{ wazuh_root }}"
+    state: present
+
+- name: Esperar a que Wazuh Manager genere ossec.conf por defecto
+  ansible.builtin.wait_for:
+    path: "{{ wazuh_root }}/manager/etc/ossec.conf"
+    timeout: 60
+
+- name: Aplicar configuración personalizada de ossec.conf
+  ansible.builtin.template:
+    src: ossec.conf.j2
+    dest: "{{ wazuh_root }}/manager/etc/ossec.conf"
+    mode: "0640"
+  notify: Reiniciar Wazuh Manager
+
+- name: Aplicar agent.conf centralizado (grupo default)
+  ansible.builtin.template:
+    src: agent.conf.j2
+    dest: "{{ wazuh_root }}/manager/etc/shared/default/agent.conf"
+    mode: "0640"
+  notify: Reiniciar Wazuh Manager
+
+# Forzar handlers ahora para que el restart del manager (y filebeat) ocurra
+# antes de la verificación de la API.
+- name: Aplicar restarts pendientes antes de validar la API
+  ansible.builtin.meta: flush_handlers
+
+- name: Pausa antes de comprobar la API
+  ansible.builtin.pause:
+    seconds: 5
+
+- name: Esperar a que la API de Wazuh responda
+  ansible.builtin.uri:
+    url: "https://127.0.0.1:{{ wazuh_api_port }}"
+    method: GET
+    validate_certs: false
+    status_code:
+      - 200
+      - 401
+  register: wazuh_api_status
+  retries: 30
+  delay: 10
+  until: wazuh_api_status.status in [200, 401]

@@ -1,0 +1,27 @@
+---
+# ============================================
+# Configuración base común para todos los nodos
+# ============================================
+
+- name: Actualizar índice de paquetes
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Instalar paquetes básicos del sistema
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - gnupg
+      - lsb-release
+      - python3-pip
+      - git
+      - jq
+      - unzip
+    state: present
+
+- name: Asegurar que sudo está instalado
+  ansible.builtin.apt:
+    name: sudo
+    state: present

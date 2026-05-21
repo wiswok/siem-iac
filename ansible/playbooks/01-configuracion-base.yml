@@ -1,0 +1,9 @@
+---
+- name: Configuración base de los nodos del laboratorio SIEM
+  hosts: all
+  become: true
+  gather_facts: true
+
+  roles:
+    - common
+    - docker_host

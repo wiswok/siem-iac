@@ -1,0 +1,73 @@
+http:
+  routers:
+    kibana:
+      rule: "Host(`kibana.lab.wiswok.net`)"
+      entryPoints:
+        - websecure
+      service: kibana
+      tls:
+        certResolver: stepca
+
+    grafana:
+      rule: "Host(`grafana.lab.wiswok.net`)"
+      entryPoints:
+        - websecure
+      service: grafana
+      tls:
+        certResolver: stepca
+
+    prometheus:
+      rule: "Host(`prometheus.lab.wiswok.net`)"
+      entryPoints:
+        - websecure
+      service: prometheus
+      tls:
+        certResolver: stepca
+
+    ca:
+      rule: "Host(`ca.lab.wiswok.net`)"
+      entryPoints:
+        - websecure
+      service: ca
+      tls:
+        certResolver: stepca
+
+    gitlab:
+      rule: "Host(`gitlab.lab.wiswok.net`)"
+      entryPoints:
+        - websecure
+      service: gitlab
+      tls:
+        certResolver: stepca
+
+  services:
+    kibana:
+      loadBalancer:
+        servers:
+          - url: "{{ kibana_backend_url }}"
+
+    grafana:
+      loadBalancer:
+        servers:
+          - url: "{{ grafana_backend_url }}"
+
+    prometheus:
+      loadBalancer:
+        servers:
+          - url: "{{ prometheus_backend_url }}"
+
+    ca:
+      loadBalancer:
+        serversTransport: stepcaTransport
+        servers:
+          - url: "{{ step_ca_backend_url }}"
+
+    gitlab:
+      loadBalancer:
+        servers:
+          - url: "http://10.10.10.40:8929"
+
+  serversTransports:
+    stepcaTransport:
+      rootCAs:
+        - /etc/traefik/ca/root_ca.crt

@@ -1,0 +1,21 @@
+services:
+  traefik:
+    image: traefik:v3.1
+    container_name: traefik-internal
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - LEGO_CA_CERTIFICATES=/etc/traefik/ca/root_ca.crt
+    volumes:
+      - "{{ traefik_dir }}/traefik.yml:/etc/traefik/traefik.yml:ro"
+      - "{{ traefik_dir }}/dynamic:/etc/traefik/dynamic:ro"
+      - "{{ traefik_dir }}/acme:/etc/traefik/acme"
+      - "{{ step_ca_dir }}/certs/root_ca.crt:/etc/traefik/ca/root_ca.crt:ro"
+    networks:
+      - traefik_internal
+
+networks:
+  traefik_internal:
+    driver: bridge

@@ -1,0 +1,158 @@
+{% raw %}
+groups:
+  - name: infraestructura
+    interval: 60s
+    rules:
+
+      - alert: NodoNoResponde
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: critical
+          categoria: infra
+        annotations:
+          summary: "Nodo caído: {{ $labels.instance }}"
+          description: "El nodo {{ $labels.instance }} (job: {{ $labels.job }}) lleva más de 2 minutos sin responder."
+          value: "DOWN"
+
+      - alert: CPUAlta
+        expr: 100 - (avg by(instance, node) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 5m
+        labels:
+          severity: warning
+          categoria: infra
+        annotations:
+          summary: "CPU alta en {{ $labels.node }}"
+          description: "Uso de CPU sostenido por encima del 85% durante más de 5 minutos."
+          value: "{{ printf \"%.1f\" $value }}%"
+
+      - alert: MemoriaAlta
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+          categoria: infra
+        annotations:
+          summary: "Memoria alta en {{ $labels.node }}"
+          description: "Uso de memoria por encima del 90% durante más de 5 minutos."
+          value: "{{ printf \"%.1f\" $value }}%"
+
+      - alert: SwapAlto
+        expr: |
+          (
+            (node_memory_SwapTotal_bytes - node_memory_SwapFree_bytes)
+            / node_memory_SwapTotal_bytes
+          ) * 100 > 50
+          and on(instance) node_memory_SwapTotal_bytes > 0
+        for: 10m
+        labels:
+          severity: warning
+          categoria: infra
+        annotations:
+          summary: "Swap alto en {{ $labels.node }}"
+          description: "Uso de swap por encima del 50% durante más de 10 minutos — posible presión de memoria."
+          value: "{{ printf \"%.1f\" $value }}%"
+
+      - alert: SwapActividadAlta
+        expr: (rate(node_vmstat_pswpin[5m]) + rate(node_vmstat_pswpout[5m])) > 100
+        for: 10m
+        labels:
+          severity: warning
+          categoria: infra
+        annotations:
+          summary: "Thrashing de swap en {{ $labels.node }}"
+          description: "Actividad de swap (páginas in+out por segundo) alta durante más de 10 minutos — indicio de thrashing."
+          value: "{{ printf \"%.0f\" $value }} páginas/s"
+
+      - alert: IOWaitAlto
+        expr: avg by(instance, node) (rate(node_cpu_seconds_total{mode="iowait"}[5m])) * 100 > 20
+        for: 10m
+        labels:
+          severity: warning
+          categoria: infra
+        annotations:
+          summary: "I/O wait alto en {{ $labels.node }}"
+          description: "Tiempo de CPU en espera de I/O por encima del 20% — posible cuello de botella en disco."
+          value: "{{ printf \"%.1f\" $value }}%"
+
+      - alert: DiscoCasiLleno
+        expr: (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"})) * 100 > 85
+        for: 10m
+        labels:
+          severity: warning
+          categoria: infra
+        annotations:
+          summary: "Disco casi lleno en {{ $labels.node }} ({{ $labels.mountpoint }})"
+          description: "El filesystem {{ $labels.mountpoint }} en {{ $labels.node }} supera el 85% de uso."
+          value: "{{ printf \"%.1f\" $value }}%"
+
+      - alert: DiscoCritico
+        expr: (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"})) * 100 > 95
+        for: 5m
+        labels:
+          severity: critical
+          categoria: infra
+        annotations:
+          summary: "Disco crítico en {{ $labels.node }} ({{ $labels.mountpoint }})"
+          description: "El filesystem {{ $labels.mountpoint }} en {{ $labels.node }} supera el 95% de uso."
+          value: "{{ printf \"%.1f\" $value }}%"
+
+      - alert: CargaAltaSostenida
+        expr: node_load5 / count without(cpu, mode) (node_cpu_seconds_total{mode="idle"}) > 2
+        for: 10m
+        labels:
+          severity: warning
+          categoria: infra
+        annotations:
+          summary: "Carga alta en {{ $labels.node }}"
+          description: "Load average (5m) es {{ printf \"%.2f\" $value }}x el número de CPUs disponibles."
+          value: "{{ printf \"%.2f\" $value }}x CPUs"
+
+      - alert: ReinicioReciente
+        expr: (time() - node_boot_time_seconds) < 600
+        for: 1m
+        labels:
+          severity: warning
+          categoria: infra
+        annotations:
+          summary: "Reinicio reciente en {{ $labels.node }}"
+          description: "El nodo {{ $labels.node }} lleva encendido menos de 10 minutos — posible reinicio no planificado."
+          value: "uptime {{ printf \"%.0f\" $value }}s"
+
+  - name: salud_siem
+    interval: 30s
+    rules:
+
+      - alert: ServicioCaido
+        expr: probe_success == 0
+        for: 2m
+        labels:
+          severity: critical
+          categoria: infra
+        annotations:
+          summary: "Servicio caído: {{ $labels.service }}"
+          description: "El servicio {{ $labels.service }} ({{ $labels.instance }}) no responde desde hace más de 2 minutos."
+          value: "DOWN"
+
+      - alert: ServicioLento
+        expr: probe_duration_seconds > 3
+        for: 5m
+        labels:
+          severity: warning
+          categoria: infra
+        annotations:
+          summary: "Servicio lento: {{ $labels.service }}"
+          description: "El servicio {{ $labels.service }} tarda {{ printf \"%.2f\" $value }}s en responder (umbral 3s) desde hace 5 minutos."
+          value: "{{ printf \"%.2f\" $value }}s"
+
+      - alert: CertificadoProximoCaducar
+        expr: (probe_ssl_earliest_cert_expiry{monitor_cert="true"} - time()) / 3600 < 6
+        for: 10m
+        labels:
+          severity: warning
+          categoria: infra
+        annotations:
+          summary: "Certificado TLS próximo a caducar: {{ $labels.service }}"
+          description: "El certificado de {{ $labels.instance }} ({{ $labels.service }}) caduca en {{ printf \"%.1f\" $value }} horas — auto-renovación posiblemente fallando."
+          value: "{{ printf \"%.1f\" $value }}h restantes"
+{% endraw %}

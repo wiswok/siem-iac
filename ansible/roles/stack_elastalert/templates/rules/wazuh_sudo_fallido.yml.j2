@@ -1,0 +1,35 @@
+name: "Wazuh - Intento sudo fallido"
+type: frequency
+index: wazuh-alerts-*
+
+num_events: 3
+timeframe:
+  minutes: 10
+
+query_key: agent.name
+
+filter:
+  - query:
+      query_string:
+        query: "rule.groups: sudo AND (rule.description: *fail* OR rule.description: *denied* OR rule.description: *incorrect*)"
+
+realert:
+  hours: 1
+
+alert_missing_value: "?"
+
+alert: telegram
+telegram_bot_token: "{{ telegram_bot_token }}"
+telegram_room_id: "{{ telegram_chat_id }}"
+telegram_parse_mode: html
+
+alert_text_type: alert_text_only
+alert_text: |
+  🟠 <b>[SIEM] Sudo fallido repetido — Wazuh</b>
+  📌 <b>Resumen:</b> Varios intentos fallidos de escalado de privilegios con sudo
+  📍 <b>Agente:</b> {0}
+  🔢 <b>Intentos:</b> {1} en 10 minutos
+  🔍 <a href="{{ kibana_public_url }}/app/discover#/?_g=(time:(from:now-1h,to:now))&_a=(query:(language:kuery,query:'agent.name:%22{0}%22 and rule.groups:sudo'))">Ver en Kibana</a>
+alert_text_args:
+  - agent.name
+  - num_hits

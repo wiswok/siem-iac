@@ -1,0 +1,120 @@
+---
+- name: Instalar dependencias para el repositorio de Wazuh
+  ansible.builtin.apt:
+    name:
+      - curl
+      - gnupg
+      - apt-transport-https
+    state: present
+    update_cache: true
+
+- name: Importar clave GPG de Wazuh al keyring
+  ansible.builtin.shell: |
+    set -o pipefail
+    curl -s https://packages.wazuh.com/key/GPG-KEY-WAZUH \
+      | gpg --no-default-keyring --keyring gnupg-ring:/usr/share/keyrings/wazuh.gpg --import
+    chmod 644 /usr/share/keyrings/wazuh.gpg
+  args:
+    executable: /bin/bash
+    creates: /usr/share/keyrings/wazuh.gpg
+
+- name: Añadir repositorio de Wazuh
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/wazuh.list
+    mode: "0644"
+    content: |
+      deb [signed-by=/usr/share/keyrings/wazuh.gpg] https://packages.wazuh.com/4.x/apt/ stable main
+  register: wazuh_repo
+
+- name: Actualizar caché APT (forzado si el repo se acaba de añadir)
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: "{{ 0 if wazuh_repo.changed else 3600 }}"
+
+- name: Instalar versión concreta del agente Wazuh
+  ansible.builtin.apt:
+    name: "wazuh-agent={{ wazuh_agent_version }}"
+    state: present
+    allow_downgrade: true
+  environment:
+    WAZUH_MANAGER: "{{ wazuh_manager_ip }}"
+
+- name: Configurar dirección del manager en ossec.conf
+  ansible.builtin.replace:
+    path: /var/ossec/etc/ossec.conf
+    regexp: '<address>.*</address>'
+    replace: '<address>{{ wazuh_manager_ip }}</address>'
+  notify: Reiniciar wazuh-agent
+
+- name: Comprobar si existe client.keys
+  ansible.builtin.stat:
+    path: /var/ossec/etc/client.keys
+  register: wazuh_client_keys
+
+- name: Obtener listado de agentes en el manager
+  ansible.builtin.command:
+    cmd: docker exec {{ wazuh_manager_container_name }} /var/ossec/bin/agent_control -l
+  delegate_to: "{{ groups['wazuh'][0] }}"
+  run_once: false
+  register: wazuh_manager_agents
+  changed_when: false
+  when: wazuh_agent_force_reenroll | default(false) | bool
+
+- name: Extraer línea del agente actual en el manager
+  ansible.builtin.set_fact:
+    wazuh_existing_agent_line: >-
+      {{
+        wazuh_manager_agents.stdout_lines
+        | select('search', 'Name: ' ~ inventory_hostname ~ ',')
+        | list
+        | first
+        | default('')
+      }}
+  when: wazuh_agent_force_reenroll | default(false) | bool
+
+- name: Extraer ID actual del agente en el manager
+  ansible.builtin.set_fact:
+    wazuh_existing_agent_id: >-
+      {{
+        wazuh_existing_agent_line
+        | regex_search('ID:\\s*([0-9]+),', '\\1')
+        | first
+        | default('')
+      }}
+  when: wazuh_agent_force_reenroll | default(false) | bool
+
+- name: Parar agente antes del reenrolado
+  ansible.builtin.systemd:
+    name: wazuh-agent
+    state: stopped
+  when: wazuh_agent_force_reenroll | default(false) | bool
+
+- name: Borrar client.keys para forzar reenrolado
+  ansible.builtin.file:
+    path: /var/ossec/etc/client.keys
+    state: absent
+  when: wazuh_agent_force_reenroll | default(false) | bool
+
+- name: Eliminar agente previo del manager si existe
+  ansible.builtin.command:
+    cmd: docker exec {{ wazuh_manager_container_name }} /var/ossec/bin/manage_agents -r {{ wazuh_existing_agent_id }}
+  delegate_to: "{{ groups['wazuh'][0] }}"
+  when:
+    - wazuh_agent_force_reenroll | default(false) | bool
+    - wazuh_existing_agent_id | length > 0
+  changed_when: true
+
+- name: Habilitar y arrancar agente Wazuh
+  ansible.builtin.systemd:
+    name: wazuh-agent
+    enabled: true
+    state: started
+
+- name: Esperar a que el servicio Wazuh Agent quede activo (con reintentos)
+  ansible.builtin.command:
+    cmd: systemctl is-active wazuh-agent
+  register: wazuh_agent_active
+  changed_when: false
+  retries: 12
+  delay: 5
+  until: wazuh_agent_active.stdout.strip() == "active"

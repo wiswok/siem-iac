@@ -1,0 +1,51 @@
+---
+# ============================================
+# Instalación y configuración de Docker
+# ============================================
+
+- name: Crear directorio para claves GPG de APT
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Descargar clave GPG oficial de Docker
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    mode: "0644"
+
+- name: Añadir repositorio oficial de Docker
+  ansible.builtin.apt_repository:
+    repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu jammy stable"
+    state: present
+    filename: docker
+
+- name: Instalar Docker Engine y herramientas asociadas
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+    state: present
+    update_cache: true
+
+- name: Asegurar que el servicio Docker está activo
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Añadir usuario ansible al grupo docker
+  ansible.builtin.user:
+    name: ansible
+    groups: docker
+    append: true
+
+- name: Añadir usuario arodper al grupo docker
+  ansible.builtin.user:
+    name: arodper
+    groups: docker
+    append: true

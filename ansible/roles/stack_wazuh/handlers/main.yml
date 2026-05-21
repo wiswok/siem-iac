@@ -1,0 +1,23 @@
+---
+- name: Reiniciar Wazuh Manager
+  community.docker.docker_container:
+    name: "{{ wazuh_manager_container_name }}"
+    state: started
+    restart: true
+
+# El restart del manager recrea alerts.json con un inodo nuevo. Si filebeat-wazuh
+# (sibling container) está desplegado, hay que reiniciarlo para que cierre el
+# harvester viejo y abra el nuevo. Si no, se queda mudo hasta otro restart.
+- name: Comprobar si filebeat-wazuh existe
+  community.docker.docker_container_info:
+    name: filebeat-wazuh
+  register: filebeat_wazuh_info
+  listen: Reiniciar Wazuh Manager
+
+- name: Reiniciar filebeat-wazuh tras restart del manager
+  community.docker.docker_container:
+    name: filebeat-wazuh
+    state: started
+    restart: true
+  when: filebeat_wazuh_info.exists
+  listen: Reiniciar Wazuh Manager

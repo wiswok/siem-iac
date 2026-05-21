@@ -1,0 +1,24 @@
+# Ansible Vault password
+.vault_pass
+
+# Terraform
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/crash.log
+terraform/crash.*.log
+terraform/credentials.auto.tfvars
+terraform/*.tfplan
+
+# Ansible
+*.retry
+ansible/*.retry
+ansible/*.tfstate
+
+# Backups
+*.bak
+
+# Python / varios
+__pycache__/
+*.pyc
+.DS_Store

@@ -1,0 +1,2 @@
+elastalert_root: "{{ ruta_base_siem }}/elastalert"
+elastalert_version: "2.19.0"

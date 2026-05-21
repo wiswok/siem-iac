@@ -1,0 +1,3 @@
+traefik_internal_ip: "10.10.30.5"
+traefik_dir: "/opt/siem/traefik"
+traefik_dashboard_enabled: false

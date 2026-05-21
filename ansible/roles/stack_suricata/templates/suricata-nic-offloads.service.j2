@@ -1,0 +1,24 @@
+[Unit]
+Description=Desactivar offloads NIC en {{ suricata_interface }} para captura limpia de Suricata
+Documentation=https://suricata.readthedocs.io/en/latest/performance/packet-capture.html
+After=network-online.target
+Wants=network-online.target
+Before=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Ignoramos errores por campo: virtio-net no expone todos los toggles y ethtool
+# devuelve != 0 si uno cualquiera falla. El prefijo "-" evita que systemd marque
+# la unidad como failed cuando un offload no es configurable en esta NIC.
+ExecStart=-/usr/sbin/ethtool -K {{ suricata_interface }} tx off
+ExecStart=-/usr/sbin/ethtool -K {{ suricata_interface }} rx off
+ExecStart=-/usr/sbin/ethtool -K {{ suricata_interface }} tso off
+ExecStart=-/usr/sbin/ethtool -K {{ suricata_interface }} gso off
+ExecStart=-/usr/sbin/ethtool -K {{ suricata_interface }} gro off
+ExecStart=-/usr/sbin/ethtool -K {{ suricata_interface }} lro off
+ExecStart=-/usr/sbin/ethtool -K {{ suricata_interface }} rxvlan off
+ExecStart=-/usr/sbin/ethtool -K {{ suricata_interface }} txvlan off
+
+[Install]
+WantedBy=multi-user.target

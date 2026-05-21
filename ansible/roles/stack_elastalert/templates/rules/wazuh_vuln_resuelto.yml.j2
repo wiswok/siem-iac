@@ -1,0 +1,33 @@
+name: "Wazuh - Vulnerabilidad resuelta"
+type: any
+index: wazuh-alerts-*
+
+filter:
+  - query_string:
+      query: "rule.id: 23502"
+
+query_key:
+  - agent.name.keyword
+  - data.vulnerability.cve.keyword
+
+realert:
+  minutes: 5
+
+alert_missing_value: "?"
+
+alert: telegram
+telegram_bot_token: "{{ telegram_bot_token }}"
+telegram_room_id: "{{ telegram_chat_id }}"
+telegram_parse_mode: html
+
+alert_text_type: alert_text_only
+alert_text: |
+  ✅ <b>[SIEM] Vulnerabilidad resuelta — Wazuh</b>
+  📌 <b>Resumen:</b> Wazuh marcó el CVE como resuelto (paquete actualizado o eliminado)
+  📍 <b>Agente:</b> {0}
+  🔖 <b>CVE:</b> {1}
+  📦 <b>Paquete:</b> {2}
+alert_text_args:
+  - agent.name
+  - data.vulnerability.cve
+  - data.vulnerability.package.name

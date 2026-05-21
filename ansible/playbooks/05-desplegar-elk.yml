@@ -1,0 +1,15 @@
+---
+- name: Despliegue del stack ELK y reconciler de vulnerabilidades
+  hosts: elk
+  become: true
+  gather_facts: true
+
+  roles:
+    - stack_elk
+    - stack_wazuh_reconciler
+
+  post_tasks:
+    - name: Forzar reconciliación inicial de vulnerabilidades
+      ansible.builtin.systemd:
+        name: wazuh-vuln-reconciler.service
+        state: started

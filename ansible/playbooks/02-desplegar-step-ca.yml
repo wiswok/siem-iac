@@ -1,0 +1,7 @@
+---
+- name: Despliegue de step-ca
+  hosts: edge
+  become: true
+  roles:
+    - stack_step_ca
+    - step_cli

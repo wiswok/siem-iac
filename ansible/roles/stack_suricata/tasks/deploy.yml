@@ -1,0 +1,98 @@
+---
+- name: Instalar ethtool
+  ansible.builtin.apt:
+    name: ethtool
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Instalar unidad systemd para desactivar offloads de la NIC de captura
+  ansible.builtin.template:
+    src: suricata-nic-offloads.service.j2
+    dest: /etc/systemd/system/suricata-nic-offloads.service
+    mode: "0644"
+  notify:
+    - Recargar systemd
+    - Aplicar desactivación de offloads en NIC de captura
+    - Reiniciar contenedor de Suricata
+
+- name: Habilitar unidad de offloads en arranque
+  ansible.builtin.systemd:
+    name: suricata-nic-offloads.service
+    enabled: true
+    daemon_reload: true
+
+- name: Asegurar que los offloads están aplicados en esta ejecución
+  ansible.builtin.systemd:
+    name: suricata-nic-offloads.service
+    state: started
+
+- name: Crear directorio raíz de Suricata
+  ansible.builtin.file:
+    path: "{{ suricata_root }}"
+    state: directory
+    mode: "0755"
+
+- name: Crear directorios de configuración, logs y reglas
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ suricata_root }}/config"
+    - "{{ suricata_root }}/logs"
+    - "{{ suricata_root }}/rules"
+
+- name: Copiar configuración de Suricata
+  ansible.builtin.template:
+    src: suricata.yaml.j2
+    dest: "{{ suricata_root }}/config/suricata.yaml"
+    mode: "0644"
+
+- name: Copiar lista de reglas desactivadas para suricata-update
+  ansible.builtin.template:
+    src: disable.conf.j2
+    dest: "{{ suricata_root }}/config/disable.conf"
+    mode: "0644"
+
+- name: Levantar contenedor de Suricata
+  community.docker.docker_container:
+    name: "{{ suricata_container_name }}"
+    image: "{{ suricata_image }}"
+    state: started
+    restart_policy: unless-stopped
+    network_mode: host
+    capabilities:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      - "{{ suricata_root }}/config:/etc/suricata"
+      - "{{ suricata_root }}/logs:/var/log/suricata"
+      - "{{ suricata_root }}/rules:/var/lib/suricata"
+    command: >
+      -i {{ suricata_interface }}
+      -c /etc/suricata/suricata.yaml
+
+- name: Esperar a que Suricata arranque
+  ansible.builtin.pause:
+    seconds: 15
+
+- name: Descargar y actualizar reglas ET Open con suricata-update
+  ansible.builtin.command:
+    cmd: >
+      docker exec {{ suricata_container_name }}
+      suricata-update --no-test
+      --disable-conf /etc/suricata/disable.conf
+  register: suricata_update_result
+  changed_when: true
+
+- name: Reiniciar Suricata para cargar las reglas descargadas
+  community.docker.docker_container:
+    name: "{{ suricata_container_name }}"
+    state: started
+    restart: true
+
+- name: Esperar a que Suricata genere logs tras el reinicio
+  ansible.builtin.wait_for:
+    path: "{{ suricata_root }}/logs/eve.json"
+    timeout: 60

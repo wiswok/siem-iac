@@ -1,0 +1,35 @@
+wazuh_root: "{{ ruta_base_siem }}/wazuh"
+
+wazuh_manager_container_name: wazuh-manager
+wazuh_version: "4.8.2"
+
+wazuh_manager_port: 1514
+wazuh_manager_registration_port: 1515
+wazuh_api_port: 55000
+
+filebeat_wazuh_root: "{{ ruta_base_siem }}/filebeat-wazuh"
+
+# Credenciales de la API REST de Wazuh (por defecto en Wazuh 4.8).
+# Solo se usan desde localhost en sec-core para el reconciler de vulnerabilidades.
+# En un entorno real se rotarían y se moverían a ansible-vault.
+wazuh_api_user: "wazuh"
+wazuh_api_password: !vault |
+          $ANSIBLE_VAULT;1.1;AES256
+          65313330383862653931333631313237356432643334316463613539666336323636623537613234
+          3462383534363736616235346631323139366539653736640a656434366232373436623430616134
+          63356365636431326364393538383662336664626334353763616361386663373539346337386464
+          3732366466353231640a386464616662376165353464383431643639393763653532343664333261
+          3064
+
+# Reconciler de inventario de vulnerabilidades (cruza syscollector con
+# wazuh-vulnerabilities-inventory para eliminar CVEs huérfanos).
+reconciler_root: "{{ ruta_base_siem }}/vuln-reconciler"
+reconciler_interval: "5min"
+
+# Active Response — respuesta automatizada ante amenazas detectadas.
+# Bloquea IPs atacantes con iptables (firewall-drop) durante un tiempo configurable.
+# Solo actúa en el agente que recibe el ataque (location: local).
+active_response_enabled: true
+# Tiempo de bloqueo en segundos para brute force SSH (por defecto 30 min).
+active_response_brute_force_timeout: 1800
+

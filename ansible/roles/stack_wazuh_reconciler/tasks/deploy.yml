@@ -1,0 +1,45 @@
+---
+- name: Crear directorio del reconciler de vulnerabilidades
+  ansible.builtin.file:
+    path: "{{ reconciler_root }}"
+    state: directory
+    mode: "0755"
+
+- name: Copiar script de reconciliación de vulnerabilidades
+  ansible.builtin.template:
+    src: reconcile_vulns.py.j2
+    dest: "{{ reconciler_root }}/reconcile_vulns.py"
+    mode: "0755"
+
+- name: Instalar archivo de entorno con credenciales de la API
+  ansible.builtin.template:
+    src: wazuh-reconciler.env.j2
+    dest: /etc/default/wazuh-reconciler
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Instalar unit de systemd para el reconciler
+  ansible.builtin.template:
+    src: wazuh-vuln-reconciler.service.j2
+    dest: /etc/systemd/system/wazuh-vuln-reconciler.service
+    mode: "0644"
+  register: _reconciler_service
+
+- name: Instalar timer de systemd para el reconciler
+  ansible.builtin.template:
+    src: wazuh-vuln-reconciler.timer.j2
+    dest: /etc/systemd/system/wazuh-vuln-reconciler.timer
+    mode: "0644"
+  register: _reconciler_timer
+
+- name: Recargar systemd si cambiaron los units
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: _reconciler_service.changed or _reconciler_timer.changed
+
+- name: Activar y arrancar el timer del reconciler
+  ansible.builtin.systemd:
+    name: wazuh-vuln-reconciler.timer
+    enabled: true
+    state: started

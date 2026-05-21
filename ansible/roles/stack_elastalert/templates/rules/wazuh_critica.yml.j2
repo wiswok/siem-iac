@@ -1,0 +1,41 @@
+name: "Wazuh - Alerta Crítica"
+type: any
+index: wazuh-alerts-*
+
+filter:
+  - range:
+      rule.level:
+        gte: 12
+  - query:
+      query_string:
+        query: "NOT rule.groups: vulnerability-detector"
+
+query_key:
+  - agent.name
+  - rule.id
+
+realert:
+  hours: 1
+
+alert_missing_value: "?"
+
+alert: telegram
+telegram_bot_token: "{{ telegram_bot_token }}"
+telegram_room_id: "{{ telegram_chat_id }}"
+telegram_parse_mode: html
+
+alert_text_type: alert_text_only
+alert_text: |
+  🔴 <b>[SIEM] Alerta Crítica — Wazuh</b>
+  📌 <b>Resumen:</b> Evento Wazuh con nivel de severidad ≥ 12
+  📍 <b>Agente:</b> {0}
+  📋 <b>Regla:</b> {1} — {2}
+  ⚠️ <b>Nivel:</b> {3}
+  🗂 <b>Grupos:</b> {4}
+  🔍 <a href="{{ kibana_public_url }}/app/discover#/?_g=(time:(from:now-1h,to:now))&_a=(query:(language:kuery,query:'rule.id:{1}'))">Ver en Kibana</a>
+alert_text_args:
+  - agent.name
+  - rule.id
+  - rule.description
+  - rule.level
+  - rule.groups

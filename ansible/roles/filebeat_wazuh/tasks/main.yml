@@ -1,0 +1,3 @@
+---
+- name: Ejecutar despliegue de Filebeat para Wazuh
+  ansible.builtin.import_tasks: deploy.yml
